@@ -8,3 +8,9 @@ CLERK_PUBLISHABLE_KEY=pk_test_your_key_here
 #
 # Optional override:
 # HEARTEXT_API_BASE_URL=https://heartext.677000.xyz
+#
+# Release signing (paths relative to project root):
+# HEARTEXT_STORE_FILE=keystore/heartext-upload.jks
+# HEARTEXT_STORE_PASSWORD=your_store_password
+# HEARTEXT_KEY_ALIAS=heartext
+# HEARTEXT_KEY_PASSWORD=your_key_password

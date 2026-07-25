@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yishenghuang.heartext.R
 import com.yishenghuang.heartext.ui.theme.AppColors
+import com.yishenghuang.heartext.util.LegalLinks
 
 @Composable
 fun SupportScreen(
@@ -61,6 +63,13 @@ fun SupportScreen(
                 subtitle = stringResource(R.string.support_feedback_sub),
                 showDivider = true,
                 onClick = onOpenFeedback
+            )
+            SupportRow(
+                icon = Icons.Outlined.Policy,
+                title = stringResource(R.string.privacy_policy),
+                subtitle = stringResource(R.string.privacy_policy_sub),
+                showDivider = true,
+                onClick = { LegalLinks.openPrivacyPolicy(context) }
             )
             SupportRow(
                 icon = Icons.Outlined.StarOutline,

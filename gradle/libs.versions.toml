@@ -25,6 +25,7 @@ opencc4j = "1.14.0"
 firebaseBom = "34.16.0"
 googleServices = "4.5.0"
 firebaseCrashlyticsGradle = "3.0.7"
+splashScreen = "1.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -63,6 +64,7 @@ media3-common = { group = "androidx.media3", name = "media3-common", version.ref
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 opencc4j = { group = "com.github.houbb", name = "opencc4j", version.ref = "opencc4j" }
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashScreen" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics" }
 firebase-crashlytics-ndk = { group = "com.google.firebase", name = "firebase-crashlytics-ndk" }

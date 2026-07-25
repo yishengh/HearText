@@ -97,6 +97,11 @@
     <string name="about_feature_tts">System TTS and offline voice packs</string>
     <string name="about_feature_typography">Typography, themes, and bookmarks</string>
     <string name="about_feature_sync">Cloud progress sync when signed in</string>
+    <string name="about_debug_section">Debug</string>
+    <string name="about_test_crash">Test Crashlytics crash</string>
+    <string name="about_test_crash_hint">App will force-close. Reopen once so the report can upload.</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="privacy_policy_sub">How we collect and use data</string>
 
     <string name="storage_title">Storage</string>
     <string name="typography_title">Typography</string>

@@ -97,6 +97,11 @@
     <string name="about_feature_tts">系统 TTS 与离线语音包</string>
     <string name="about_feature_typography">排版、主题与书签</string>
     <string name="about_feature_sync">登录后云端进度同步</string>
+    <string name="about_debug_section">调试</string>
+    <string name="about_test_crash">测试 Crashlytics 崩溃</string>
+    <string name="about_test_crash_hint">应用会强制退出。请再打开一次以便上传报告。</string>
+    <string name="privacy_policy">隐私政策</string>
+    <string name="privacy_policy_sub">我们如何收集与使用数据</string>
 
     <string name="storage_title">存储空间</string>
     <string name="typography_title">排版</string>

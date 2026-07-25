@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yishenghuang.heartext.R
 import com.yishenghuang.heartext.ui.theme.HearPurple
+import com.yishenghuang.heartext.util.LegalLinks
 
 @Composable
 fun AuthGate(
@@ -103,6 +105,7 @@ private fun MissingKeyScreen(onContinueOffline: () -> Unit) {
 
 @Composable
 fun SignInOrUpScreen(onContinueOffline: () -> Unit) {
+    val context = LocalContext.current
     var isSignUp by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
@@ -139,6 +142,12 @@ fun SignInOrUpScreen(onContinueOffline: () -> Unit) {
             }
             TextButton(onClick = onContinueOffline, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.auth_continue_offline))
+            }
+            TextButton(
+                onClick = { LegalLinks.openPrivacyPolicy(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.privacy_policy))
             }
         }
     }

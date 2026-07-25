@@ -97,6 +97,11 @@
     <string name="about_feature_tts">Synthèse système et packs vocaux hors ligne</string>
     <string name="about_feature_typography">Typographie, thèmes et signets</string>
     <string name="about_feature_sync">Sync cloud de la progression une fois connecté</string>
+    <string name="about_debug_section">Debug</string>
+    <string name="about_test_crash">Tester un crash Crashlytics</string>
+    <string name="about_test_crash_hint">L’app va se fermer. Rouvrez-la une fois pour envoyer le rapport.</string>
+    <string name="privacy_policy">Politique de confidentialité</string>
+    <string name="privacy_policy_sub">Comment nous collectons et utilisons les données</string>
 
     <string name="storage_title">Stockage</string>
     <string name="typography_title">Typographie</string>

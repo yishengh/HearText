@@ -51,6 +51,22 @@ android {
             optimization {
                 enable = false
             }
+            val storeFilePath = localProperties.getProperty("HEARTEXT_STORE_FILE")
+            val storePassword = localProperties.getProperty("HEARTEXT_STORE_PASSWORD")
+            val keyAlias = localProperties.getProperty("HEARTEXT_KEY_ALIAS")
+            val keyPassword = localProperties.getProperty("HEARTEXT_KEY_PASSWORD")
+            if (!storeFilePath.isNullOrBlank() &&
+                !storePassword.isNullOrBlank() &&
+                !keyAlias.isNullOrBlank() &&
+                !keyPassword.isNullOrBlank()
+            ) {
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = rootProject.file(storeFilePath)
+                    this.storePassword = storePassword
+                    this.keyAlias = keyAlias
+                    this.keyPassword = keyPassword
+                }
+            }
         }
     }
     compileOptions {
@@ -136,6 +152,7 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.session)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.opencc4j)
     implementation("org.apache.commons:commons-compress:1.26.2")
 

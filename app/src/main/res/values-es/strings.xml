@@ -97,6 +97,11 @@
     <string name="about_feature_tts">TTS del sistema y paquetes de voz sin conexión</string>
     <string name="about_feature_typography">Tipografía, temas y marcadores</string>
     <string name="about_feature_sync">Sincronización en la nube del progreso al iniciar sesión</string>
+    <string name="about_debug_section">Depuración</string>
+    <string name="about_test_crash">Probar crash de Crashlytics</string>
+    <string name="about_test_crash_hint">La app se cerrará. Ábrela de nuevo para subir el informe.</string>
+    <string name="privacy_policy">Política de privacidad</string>
+    <string name="privacy_policy_sub">Cómo recopilamos y usamos los datos</string>
 
     <string name="storage_title">Almacenamiento</string>
     <string name="typography_title">Tipografía</string>

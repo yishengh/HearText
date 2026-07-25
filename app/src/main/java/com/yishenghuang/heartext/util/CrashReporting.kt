@@ -29,4 +29,15 @@ object CrashReporting {
             crashlytics.recordException(throwable)
         }
     }
+
+    /** Debug-only: enable collection then crash so Crashlytics can upload on next launch. */
+    fun forceTestCrash() {
+        runCatching {
+            val crashlytics = FirebaseCrashlytics.getInstance()
+            crashlytics.isCrashlyticsCollectionEnabled = true
+            crashlytics.log("Manual test crash from About screen")
+            crashlytics.setCustomKey("test_crash", true)
+        }
+        throw RuntimeException("Test Crashlytics")
+    }
 }

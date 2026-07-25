@@ -10,14 +10,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -28,9 +32,12 @@ import com.yishenghuang.heartext.BuildConfig
 import com.yishenghuang.heartext.R
 import com.yishenghuang.heartext.ui.theme.AppColors
 import com.yishenghuang.heartext.ui.theme.HearPurple
+import com.yishenghuang.heartext.util.CrashReporting
+import com.yishenghuang.heartext.util.LegalLinks
 
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     SettingsSubpageScaffold(title = stringResource(R.string.about_title), onBack = onBack) {
         Column(
             modifier = Modifier
@@ -67,6 +74,13 @@ fun AboutScreen(onBack: () -> Unit) {
                 color = AppColors.TextSecondary,
                 textAlign = TextAlign.Center
             )
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = { LegalLinks.openPrivacyPolicy(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.privacy_policy))
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -83,6 +97,37 @@ fun AboutScreen(onBack: () -> Unit) {
             AboutBullet(stringResource(R.string.about_feature_tts))
             AboutBullet(stringResource(R.string.about_feature_typography))
             AboutBullet(stringResource(R.string.about_feature_sync))
+        }
+
+        if (BuildConfig.DEBUG) {
+            Spacer(Modifier.height(16.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    stringResource(R.string.about_debug_section),
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.about_test_crash_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.TextSecondary
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { CrashReporting.forceTestCrash() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.about_test_crash))
+                }
+            }
         }
     }
 }
