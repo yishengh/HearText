@@ -1,0 +1,487 @@
+package com.yishenghuang.heartext
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.yishenghuang.heartext.data.AnnotationEntity
+import com.yishenghuang.heartext.data.BookEntity
+import com.yishenghuang.heartext.data.OfflineVoiceRepository
+import com.yishenghuang.heartext.network.ApiCatalogBook
+import com.yishenghuang.heartext.network.ApiCatalogCategory
+import com.yishenghuang.heartext.network.ApiCatalogChapter
+import com.yishenghuang.heartext.network.ApiCatalogPreview
+import com.yishenghuang.heartext.network.ApiCatalogTocItem
+import com.yishenghuang.heartext.network.ApiOfflineVoice
+import com.yishenghuang.heartext.network.ApiUser
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class StoreViewModel(
+    private val app: HearTextApp
+) : ViewModel() {
+    private val catalog = app.container.catalogRepository
+
+    private val _featured = MutableStateFlow<List<ApiCatalogBook>>(emptyList())
+    val featured: StateFlow<List<ApiCatalogBook>> = _featured.asStateFlow()
+
+    private val _rankings = MutableStateFlow<List<ApiCatalogBook>>(emptyList())
+    val rankings: StateFlow<List<ApiCatalogBook>> = _rankings.asStateFlow()
+
+    private val _categories = MutableStateFlow<List<ApiCatalogCategory>>(emptyList())
+    val categories: StateFlow<List<ApiCatalogCategory>> = _categories.asStateFlow()
+
+    private val _results = MutableStateFlow<List<ApiCatalogBook>>(emptyList())
+    val results: StateFlow<List<ApiCatalogBook>> = _results.asStateFlow()
+
+    private val _resultsTotal = MutableStateFlow(0)
+    val resultsTotal: StateFlow<Int> = _resultsTotal.asStateFlow()
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    private val _selectedCategory = MutableStateFlow<String?>(null)
+    val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
+
+    private val _loading = MutableStateFlow(false)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _loadingMore = MutableStateFlow(false)
+    val loadingMore: StateFlow<Boolean> = _loadingMore.asStateFlow()
+
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private var resultsPage = 0
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
+            runCatching {
+                _featured.value = catalog.featured()
+                _rankings.value = catalog.rankings("shelves")
+                _categories.value = catalog.categories()
+                search(_query.value, _selectedCategory.value, reset = true)
+            }.onFailure {
+                _error.value = it.message ?: app.getString(R.string.error_store_load)
+            }
+            _loading.value = false
+        }
+    }
+
+    fun setQuery(value: String) {
+        _query.value = value
+    }
+
+    fun selectCategory(slug: String?) {
+        _selectedCategory.value = slug
+        viewModelScope.launch { search(_query.value, slug, reset = true) }
+    }
+
+    fun submitSearch() {
+        viewModelScope.launch { search(_query.value, _selectedCategory.value, reset = true) }
+    }
+
+    fun loadMore() {
+        if (_loading.value || _loadingMore.value || !_hasMore.value) return
+        viewModelScope.launch {
+            search(_query.value, _selectedCategory.value, reset = false)
+        }
+    }
+
+    private suspend fun search(q: String, category: String?, reset: Boolean) {
+        if (reset) {
+            resultsPage = 0
+            _hasMore.value = false
+        }
+        val nextPage = resultsPage + 1
+        if (!reset) _loadingMore.value = true
+        runCatching {
+            val list = catalog.search(
+                q = q.takeIf { it.isNotBlank() },
+                category = category,
+                page = nextPage,
+                pageSize = PAGE_SIZE
+            )
+            resultsPage = list.page
+            _resultsTotal.value = list.total
+            _results.value = if (reset) list.items else (_results.value + list.items).distinctBy { it.id }
+            _hasMore.value = _results.value.size < list.total && list.items.isNotEmpty()
+        }.onFailure {
+            _error.value = it.message
+        }
+        _loadingMore.value = false
+    }
+
+    companion object {
+        private const val PAGE_SIZE = 50
+
+        fun factory(app: HearTextApp): ViewModelProvider.Factory = viewModelFactory {
+            initializer { StoreViewModel(app) }
+        }
+    }
+}
+
+class CatalogDetailViewModel(
+    private val app: HearTextApp,
+    private val catalogId: String
+) : ViewModel() {
+    private val catalog = app.container.catalogRepository
+
+    private val _book = MutableStateFlow<ApiCatalogBook?>(null)
+    val book: StateFlow<ApiCatalogBook?> = _book.asStateFlow()
+
+    private val _toc = MutableStateFlow<List<ApiCatalogTocItem>>(emptyList())
+    val toc: StateFlow<List<ApiCatalogTocItem>> = _toc.asStateFlow()
+
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _busy = MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _shelvedBook = MutableStateFlow<BookEntity?>(null)
+    val shelvedBook: StateFlow<BookEntity?> = _shelvedBook.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _loading.value = true
+            runCatching {
+                _book.value = catalog.detail(catalogId)
+                _toc.value = catalog.toc(catalogId).items
+            }.onFailure { _error.value = it.message }
+            _loading.value = false
+        }
+    }
+
+    fun downloadAndShelf() {
+        val current = _book.value ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            runCatching {
+                _shelvedBook.value = catalog.downloadAndShelf(current)
+            }.onFailure { _error.value = it.message ?: "Download failed" }
+            _busy.value = false
+        }
+    }
+
+    /** Consume one-shot open-after-download event so back won't re-open. */
+    fun consumeShelvedBook() {
+        _shelvedBook.value = null
+    }
+
+    companion object {
+        fun factory(app: HearTextApp, catalogId: String): ViewModelProvider.Factory = viewModelFactory {
+            initializer { CatalogDetailViewModel(app, catalogId) }
+        }
+    }
+}
+
+class CatalogPreviewViewModel(
+    private val app: HearTextApp,
+    private val catalogId: String
+) : ViewModel() {
+    private val catalog = app.container.catalogRepository
+
+    private val _preview = MutableStateFlow<ApiCatalogPreview?>(null)
+    val preview: StateFlow<ApiCatalogPreview?> = _preview.asStateFlow()
+
+    private val _chapterIndex = MutableStateFlow(0)
+    val chapterIndex: StateFlow<Int> = _chapterIndex.asStateFlow()
+
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    val currentChapter: ApiCatalogChapter?
+        get() = _preview.value?.chapters?.getOrNull(_chapterIndex.value)
+
+    init {
+        viewModelScope.launch {
+            runCatching {
+                _preview.value = catalog.preview(catalogId)
+            }.onFailure { _error.value = it.message }
+            _loading.value = false
+        }
+    }
+
+    fun selectChapter(index: Int) {
+        val size = _preview.value?.chapters?.size ?: return
+        _chapterIndex.value = index.coerceIn(0, (size - 1).coerceAtLeast(0))
+    }
+
+    companion object {
+        fun factory(app: HearTextApp, catalogId: String): ViewModelProvider.Factory = viewModelFactory {
+            initializer { CatalogPreviewViewModel(app, catalogId) }
+        }
+    }
+}
+
+class ProfileViewModel(
+    private val app: HearTextApp
+) : ViewModel() {
+    private val api = app.container.api
+    private val offline = app.container.offlineVoiceRepository
+    private val books = app.container.bookRepository
+    private val readingStats = app.container.readingStats
+
+    private val _user = MutableStateFlow<ApiUser?>(null)
+    val user: StateFlow<ApiUser?> = _user.asStateFlow()
+
+    private val _offlineVoices = MutableStateFlow<List<ApiOfflineVoice>>(emptyList())
+    val offlineVoices: StateFlow<List<ApiOfflineVoice>> = _offlineVoices.asStateFlow()
+
+    private val _installedIds = MutableStateFlow<Set<String>>(emptySet())
+    val installedIds: StateFlow<Set<String>> = _installedIds.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<OfflineDownloadProgress?>(null)
+    val downloadProgress: StateFlow<OfflineDownloadProgress?> = _downloadProgress.asStateFlow()
+
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    private val _busy = MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    val settings = app.container.readerPreferences.settings
+
+    val libraryStats: StateFlow<com.yishenghuang.heartext.data.LibraryStats> =
+        combine(books.observeBooks(), readingStats.totalReadingMs) { list, readingMs ->
+            com.yishenghuang.heartext.data.LibraryStats(
+                totalBooks = list.size,
+                readingBooks = list.count { it.progressPercent > 0f && it.progressPercent < 99.5f },
+                finishedBooks = list.count { it.progressPercent >= 99.5f },
+                storeBooks = list.count { it.source == com.yishenghuang.heartext.data.BookSource.CATALOG },
+                totalReadingMs = readingMs
+            )
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            com.yishenghuang.heartext.data.LibraryStats()
+        )
+
+    init {
+        refreshInstalled()
+        viewModelScope.launch {
+            runCatching { offline.ensureSharedEspeakNgData() }
+            refreshInstalled()
+        }
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            runCatching {
+                if (app.container.authTokenProvider.isSignedIn && api.isConfigured) {
+                    _user.value = api.me()
+                    _offlineVoices.value = offline.featured()
+                }
+            }.onFailure { _message.value = it.message }
+            runCatching { offline.ensureSharedEspeakNgData() }
+            refreshInstalled()
+        }
+    }
+
+    fun updateDisplayName(name: String) {
+        viewModelScope.launch {
+            runCatching {
+                _user.value = api.updateMe(displayName = name.trim())
+                _message.value = app.getString(R.string.toast_profile_updated)
+            }.onFailure { _message.value = it.message }
+        }
+    }
+
+    fun downloadOfflineVoice(voice: ApiOfflineVoice) {
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            _downloadProgress.value = OfflineDownloadProgress(
+                voiceId = voice.id,
+                bytesRead = 0L,
+                contentLength = voice.fileSizeBytes.coerceAtLeast(0L),
+                phase = OfflineDownloadPhase.Downloading
+            )
+            runCatching {
+                offline.downloadAndInstall(voice) { read, total ->
+                    val length = if (total > 0) total else voice.fileSizeBytes
+                    _downloadProgress.value = OfflineDownloadProgress(
+                        voiceId = voice.id,
+                        bytesRead = read,
+                        contentLength = length,
+                        phase = OfflineDownloadPhase.Downloading
+                    )
+                }
+                refreshInstalled()
+                _message.value = app.getString(R.string.toast_voice_installed, voice.name)
+            }.onFailure {
+                _message.value = it.message ?: app.getString(R.string.toast_download_failed)
+            }
+            _downloadProgress.value = null
+            _busy.value = false
+        }
+    }
+
+    fun selectOfflineVoice(voice: ApiOfflineVoice) {
+        viewModelScope.launch {
+            runCatching { offline.ensureSharedEspeakNgData() }
+            refreshInstalled()
+            if (!offline.isInstalled(voice.id)) {
+                _message.value = app.getString(R.string.toast_need_full_offline)
+                return@launch
+            }
+            app.container.readerPreferences.update {
+                it.copy(
+                    ttsVoiceSource = com.yishenghuang.heartext.data.TtsVoiceSource.OFFLINE,
+                    selectedOfflineVoiceId = voice.id
+                )
+            }
+            _message.value = app.getString(R.string.toast_selected_offline, voice.name)
+        }
+    }
+
+    fun selectSystemVoice() {
+        app.container.readerPreferences.update {
+            it.copy(
+                ttsVoiceSource = com.yishenghuang.heartext.data.TtsVoiceSource.SYSTEM,
+                selectedOfflineVoiceId = null
+            )
+        }
+        _message.value = app.getString(R.string.toast_selected_system)
+    }
+
+    private val _samplePlayingId = MutableStateFlow<String?>(null)
+    val samplePlayingId: StateFlow<String?> = _samplePlayingId.asStateFlow()
+
+    fun playSample(voiceId: String) {
+        if (_samplePlayingId.value == voiceId) {
+            stopSample()
+            return
+        }
+        viewModelScope.launch {
+            stopSample()
+            _samplePlayingId.value = voiceId
+            runCatching {
+                offline.playSample(voiceId) {
+                    _samplePlayingId.value = null
+                }
+            }.onFailure {
+                _samplePlayingId.value = null
+                _message.value = it.message
+            }
+        }
+    }
+
+    fun stopSample() {
+        offline.stopSample()
+        _samplePlayingId.value = null
+    }
+
+    override fun onCleared() {
+        stopSample()
+        super.onCleared()
+    }
+
+    fun isInstalled(voiceId: String) = voiceId in _installedIds.value
+
+    private fun refreshInstalled() {
+        _installedIds.value = offline.installedIds()
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            runCatching {
+                api.deleteMe()
+                _user.value = null
+                _message.value = app.getString(R.string.toast_account_deleted)
+            }.onFailure { _message.value = it.message }
+        }
+    }
+
+    fun clearMessage() {
+        _message.value = null
+    }
+
+    companion object {
+        fun factory(app: HearTextApp): ViewModelProvider.Factory = viewModelFactory {
+            initializer { ProfileViewModel(app) }
+        }
+    }
+}
+
+enum class OfflineDownloadPhase { Downloading, Installing }
+
+data class OfflineDownloadProgress(
+    val voiceId: String,
+    val bytesRead: Long,
+    val contentLength: Long,
+    val phase: OfflineDownloadPhase
+) {
+    val fraction: Float
+        get() = when {
+            contentLength > 0L -> (bytesRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+            phase == OfflineDownloadPhase.Installing -> 1f
+            else -> 0f
+        }
+}
+
+class AnnotationsViewModel(
+    private val app: HearTextApp,
+    private val bookId: String
+) : ViewModel() {
+    private val repo = app.container.annotationRepository
+    private val books = app.container.bookRepository
+
+    val annotations = repo.observe(bookId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            val book = books.getBook(bookId)
+            repo.syncFromServer(bookId, book?.remoteBookId)
+        }
+    }
+
+    fun addBookmark(chapterIndex: Int) {
+        viewModelScope.launch {
+            val book = books.getBook(bookId)
+            repo.addBookmark(bookId, book?.remoteBookId, chapterIndex)
+        }
+    }
+
+    fun addNote(chapterIndex: Int, note: String) {
+        viewModelScope.launch {
+            val book = books.getBook(bookId)
+            repo.addNote(bookId, book?.remoteBookId, chapterIndex, note)
+        }
+    }
+
+    fun delete(entity: AnnotationEntity) {
+        viewModelScope.launch { repo.delete(entity) }
+    }
+
+    companion object {
+        fun factory(app: HearTextApp, bookId: String): ViewModelProvider.Factory = viewModelFactory {
+            initializer { AnnotationsViewModel(app, bookId) }
+        }
+    }
+}

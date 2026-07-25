@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+/app/libs/*.aar
+/app/libs/*.jar
+# Firebase — download from Console; do not commit
+/app/google-services.json

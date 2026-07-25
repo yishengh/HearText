@@ -19,6 +19,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // PdfiumAndroid / AndroidPdfViewer (transitive via Readium pdfium adapter)
+        maven(url = "https://jitpack.io")
     }
 }
 

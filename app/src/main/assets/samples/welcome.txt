@@ -1,0 +1,8 @@
+Welcome to HearText (asset sample)
+
+This plain-text sample ships with the app under assets/samples.
+
+You can import additional EPUB and TXT files from the Library screen.
+
+Listening
+Open this book in the reader and tap the play button to hear text-to-speech. Record your own voice samples in the Voice tab when you are ready to try AI voices.
