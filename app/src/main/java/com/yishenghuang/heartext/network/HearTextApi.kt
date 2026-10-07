@@ -303,7 +303,13 @@ class HearTextApi(
         onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)? = null
     ): File {
         val context = currentCoroutineContext()
+        val session = tokenProvider.sessionKey
+        suspend fun token(refresh: Boolean = false): String {
+            tokenProvider.requireSession(session)
+            return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
+        }
         suspend fun call(token: String): File {
+            tokenProvider.requireSession(session)
             val request = Request.Builder()
                 .url("$baseUrl$path")
                 .addHeader("Authorization", "Bearer $token")
@@ -317,14 +323,14 @@ class HearTextApi(
                 val body = response.body ?: throw IOException("Empty download")
                 body.byteStream().use { input ->
                     atomicDownload(input, destFile, body.contentLength(),
-                        checkActive = { context.ensureActive() }, onProgress = onProgress)
+                        checkActive = { context.ensureActive(); tokenProvider.requireSession(session) }, onProgress = onProgress)
                 }
             }
         }
         return try {
-            call(tokenProvider.getToken())
+            call(token())
         } catch (e: ApiHttpException) {
-            if (e.code == 401) call(tokenProvider.getToken(forceRefresh = true)) else throw e
+            if (e.code == 401) call(token(true)) else throw e
         }
     }
 
@@ -346,7 +352,13 @@ class HearTextApi(
         jsonBody: String? = null,
         accept: String = "application/json"
     ): String {
+        val session = tokenProvider.sessionKey
+        suspend fun token(refresh: Boolean = false): String {
+            tokenProvider.requireSession(session)
+            return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
+        }
         suspend fun call(token: String): Pair<Int, String> {
+            tokenProvider.requireSession(session)
             val builder = Request.Builder()
                 .url(fullUrl)
                 .addHeader("Authorization", "Bearer $token")
@@ -361,12 +373,14 @@ class HearTextApi(
                 else -> error("Unsupported method $method")
             }
             return client.newCall(builder.build()).consumeCancellable { response ->
-                response.code to response.body?.string().orEmpty()
+                val result = response.code to response.body?.string().orEmpty()
+                tokenProvider.requireSession(session)
+                result
             }
         }
-        var (code, text) = call(tokenProvider.getToken())
+        var (code, text) = call(token())
         if (code == 401) {
-            val retry = call(tokenProvider.getToken(forceRefresh = true))
+            val retry = call(token(true))
             code = retry.first
             text = retry.second
         }
@@ -381,8 +395,14 @@ class HearTextApi(
         jsonBody: String? = null,
         accept: String = "application/json"
     ): String {
+        val session = tokenProvider.sessionKey
+        suspend fun token(refresh: Boolean = false): String {
+            tokenProvider.requireSession(session)
+            return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
+        }
         val fullUrl = "$baseUrl$path"
         suspend fun call(token: String?): Pair<Int, String> {
+            tokenProvider.requireSession(session)
             val builder = Request.Builder()
                 .url(fullUrl)
                 .addHeader("Accept", accept)
@@ -399,15 +419,17 @@ class HearTextApi(
                 else -> error("Unsupported method $method")
             }
             return client.newCall(builder.build()).consumeCancellable { response ->
-                response.code to response.body?.string().orEmpty()
+                val result = response.code to response.body?.string().orEmpty()
+                tokenProvider.requireSession(session)
+                result
             }
         }
-        val token = if (tokenProvider.isSignedIn) {
-            tokenProvider.getToken()
+        val initialToken = if (session != null) {
+            token()
         } else null
-        var (code, text) = call(token)
-        if (code == 401 && tokenProvider.isSignedIn) {
-            val refreshed = tokenProvider.getToken(forceRefresh = true)
+        var (code, text) = call(initialToken)
+        if (code == 401 && session != null) {
+            val refreshed = token(true)
             val retry = call(refreshed)
             code = retry.first
             text = retry.second

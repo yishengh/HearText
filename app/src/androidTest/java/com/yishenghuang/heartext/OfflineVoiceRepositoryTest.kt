@@ -26,6 +26,7 @@ class OfflineVoiceRepositoryTest {
     private lateinit var server: MockWebServer
     private lateinit var repository: OfflineVoiceRepository
     private val auth = object : SessionTokenProvider {
+        override val sessionKey = "fixture-session"
         override val isSignedIn = true
         override suspend fun getToken(forceRefresh: Boolean) = "local-test-token"
     }

@@ -19,6 +19,7 @@ class HearTextApiTest {
     @get:Rule val folder = TemporaryFolder()
     private class Tokens : SessionTokenProvider {
         override val isSignedIn = true
+        @Volatile override var sessionKey: String? = "session-a"
         val refreshes = mutableListOf<Boolean>()
         override suspend fun getToken(forceRefresh: Boolean): String {
             refreshes += forceRefresh
@@ -27,6 +28,29 @@ class HearTextApiTest {
     }
     private val tokens = Tokens()
     private fun api() = HearTextApi(tokens, OkHttpClient(), server.url("/").toString())
+
+    @Test fun accountSwitchDuringDownloadPreservesInstalledFile() = runBlocking {
+        server.enqueue(MockResponse().setBody("replacement"))
+        val file = folder.newFile("voice.zip").apply { writeText("installed") }
+        val failure = runCatching {
+            api().downloadOfflineVoice("voice", file) { _, _ -> tokens.sessionKey = "session-b" }
+        }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertEquals("installed", file.readText())
+        assertEquals(1, folder.root.list()!!.size)
+    }
+
+    @Test fun accountSwitchBeforeUnauthorizedResponseDoesNotRetryAsNewUser() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401).setBody("expired")
+            .setBodyDelay(300, TimeUnit.MILLISECONDS))
+        val api = api()
+        val result = async { runCatching { api.listBooks() }.exceptionOrNull() }
+        withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(5, TimeUnit.SECONDS)) }
+        tokens.sessionKey = "session-b"
+        assertTrue(result.await() is CancellationException)
+        assertEquals(listOf(false), tokens.refreshes)
+        assertEquals(1, server.requestCount)
+    }
 
     @Test fun unauthorizedDownloadRefreshesOnceThenCommits() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).setBody("expired"))

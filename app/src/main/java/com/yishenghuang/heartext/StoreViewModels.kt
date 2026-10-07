@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -37,95 +39,63 @@ class StoreViewModel(
     private val _categories = MutableStateFlow<List<ApiCatalogCategory>>(emptyList())
     val categories: StateFlow<List<ApiCatalogCategory>> = _categories.asStateFlow()
 
-    private val _results = MutableStateFlow<List<ApiCatalogBook>>(emptyList())
-    val results: StateFlow<List<ApiCatalogBook>> = _results.asStateFlow()
-
-    private val _resultsTotal = MutableStateFlow(0)
-    val resultsTotal: StateFlow<Int> = _resultsTotal.asStateFlow()
-
+    private val search = CatalogSearch(viewModelScope,
+        fetch = { q, category, page -> catalog.search(q, category, page, PAGE_SIZE) },
+        errorMessage = { app.getString(R.string.error_store_load) })
+    val results = search.state.map { it.items }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val resultsTotal = search.state.map { it.total }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    val loadingMore = search.state.map { it.loadingMore }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val hasMore = search.state.map { it.hasMore }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    private val sectionLoading = MutableStateFlow(false)
+    private val sectionError = MutableStateFlow<String?>(null)
+    val loading = combine(sectionLoading, search.state) { sections, state -> sections || state.loading }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val error = combine(sectionError, search.state) { sections, state -> state.error ?: sections }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private var refreshJob: kotlinx.coroutines.Job? = null
+    private var refreshGeneration = 0L
     private val _query = MutableStateFlow("")
-    val query: StateFlow<String> = _query.asStateFlow()
-
+    val query = _query.asStateFlow()
     private val _selectedCategory = MutableStateFlow<String?>(null)
-    val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
+    val selectedCategory = _selectedCategory.asStateFlow()
 
-    private val _loading = MutableStateFlow(false)
-    val loading: StateFlow<Boolean> = _loading.asStateFlow()
-
-    private val _loadingMore = MutableStateFlow(false)
-    val loadingMore: StateFlow<Boolean> = _loadingMore.asStateFlow()
-
-    private val _hasMore = MutableStateFlow(false)
-    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
-
-    private var resultsPage = 0
-
-    init {
-        refresh()
-    }
+    init { refresh() }
 
     fun refresh() {
-        viewModelScope.launch {
-            _loading.value = true
-            _error.value = null
-            runCatching {
-                _featured.value = catalog.featured()
-                _rankings.value = catalog.rankings("shelves")
-                _categories.value = catalog.categories()
-                search(_query.value, _selectedCategory.value, reset = true)
-            }.onFailure {
-                _error.value = it.message ?: app.getString(R.string.error_store_load)
+        val generation = ++refreshGeneration
+        refreshJob?.cancel()
+        submitSearch()
+        refreshJob = viewModelScope.launch {
+            sectionLoading.value = true
+            sectionError.value = null
+            try {
+                val featured = catalog.featured()
+                val rankings = catalog.rankings("shelves")
+                val categories = catalog.categories()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                _featured.value = featured
+                _rankings.value = rankings
+                _categories.value = categories
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                sectionError.value = app.getString(R.string.error_store_load)
+            } finally {
+                if (generation == refreshGeneration) sectionLoading.value = false
             }
-            _loading.value = false
         }
     }
 
-    fun setQuery(value: String) {
-        _query.value = value
-    }
-
+    fun setQuery(value: String) { _query.value = value }
     fun selectCategory(slug: String?) {
         _selectedCategory.value = slug
-        viewModelScope.launch { search(_query.value, slug, reset = true) }
+        submitSearch()
     }
-
     fun submitSearch() {
-        viewModelScope.launch { search(_query.value, _selectedCategory.value, reset = true) }
+        sectionError.value = null
+        search.submit(_query.value, _selectedCategory.value)
     }
-
-    fun loadMore() {
-        if (_loading.value || _loadingMore.value || !_hasMore.value) return
-        viewModelScope.launch {
-            search(_query.value, _selectedCategory.value, reset = false)
-        }
-    }
-
-    private suspend fun search(q: String, category: String?, reset: Boolean) {
-        if (reset) {
-            resultsPage = 0
-            _hasMore.value = false
-        }
-        val nextPage = resultsPage + 1
-        if (!reset) _loadingMore.value = true
-        runCatching {
-            val list = catalog.search(
-                q = q.takeIf { it.isNotBlank() },
-                category = category,
-                page = nextPage,
-                pageSize = PAGE_SIZE
-            )
-            resultsPage = list.page
-            _resultsTotal.value = list.total
-            _results.value = if (reset) list.items else (_results.value + list.items).distinctBy { it.id }
-            _hasMore.value = _results.value.size < list.total && list.items.isNotEmpty()
-        }.onFailure {
-            _error.value = it.message
-        }
-        _loadingMore.value = false
-    }
+    fun loadMore() = search.loadMore()
 
     companion object {
         private const val PAGE_SIZE = 50
