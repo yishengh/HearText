@@ -33,6 +33,24 @@ interface BookDao {
     @Update
     suspend fun update(book: BookEntity)
 
+    @Query("""UPDATE books SET remoteBookId = :remoteId, remoteOwnerId = :owner,
+        coverUrl = COALESCE(:url, coverUrl) WHERE id = :id
+        AND (remoteOwnerId IS NULL OR remoteOwnerId = :owner)
+        AND (remoteBookId IS NULL OR remoteBookId = :remoteId)""")
+    suspend fun bindRemote(id: String, remoteId: String, owner: String, url: String?): Int
+
+    @Query("""UPDATE books SET coverPath = :path, coverSource = :source
+        WHERE id = :id AND remoteOwnerId = :owner AND coverPath IS :expectedPath
+        AND (coverSource IS NULL OR coverSource != 'USER')""")
+    suspend fun updateRemoteCover(id: String, owner: String, expectedPath: String?, path: String,
+        source: CoverSource): Int
+
+    @Query("""UPDATE books SET lastChapterIndex = :chapter, lastOffset = :offset,
+        progressPercent = :percent, progressUpdatedAt = :updatedAt, locatorJson = NULL
+        WHERE id = :id AND remoteOwnerId = :owner AND progressUpdatedAt < :updatedAt""")
+    suspend fun mergeRemoteProgress(id: String, owner: String, chapter: Int, offset: Int,
+        percent: Float, updatedAt: Long)
+
     @Query("UPDATE books SET coverPath = :path, coverSource = :source WHERE id = :id")
     suspend fun updateCover(id: String, path: String?, source: CoverSource?)
 

@@ -34,7 +34,7 @@ class Converters {
 
 @Database(
     entities = [BookEntity::class, AnnotationEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -101,6 +101,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN remoteOwnerId TEXT")
+            }
+        }
+
+        internal val migrations = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+            MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -111,15 +120,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "heartext.db"
                 )
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7
-                    )
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(*migrations)
                     .build()
                     .also { instance = it }
             }

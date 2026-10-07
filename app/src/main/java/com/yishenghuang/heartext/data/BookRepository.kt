@@ -395,7 +395,7 @@ class BookRepository(
         coverStore.delete(bookId)
         book.coverPath?.let { runCatching { File(it).delete() } }
         book.remoteBookId?.let { remoteId ->
-            runCatching { cloudSync?.deleteRemoteBook(remoteId) }
+            runCatching { cloudSync?.deleteRemoteBook(book) }
         }
     }
 

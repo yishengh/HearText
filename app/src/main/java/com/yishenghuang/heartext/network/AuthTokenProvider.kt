@@ -15,6 +15,7 @@ interface SessionTokenProvider {
     val isSignedIn: Boolean
     /** Changes when the user signs out, switches accounts, or starts another session. */
     val sessionKey: String?
+    val accountId: String? get() = sessionKey
     suspend fun getToken(forceRefresh: Boolean = false): String
 }
 
@@ -22,7 +23,19 @@ internal fun SessionTokenProvider.requireSession(expected: String?) {
     if (sessionKey != expected) throw kotlinx.coroutines.CancellationException("Session changed")
 }
 
+internal class ExpectedSession(val value: String?) : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<ExpectedSession>
+}
+
+internal suspend fun SessionTokenProvider.requestSession(): String? {
+    val expected = kotlinx.coroutines.currentCoroutineContext()[ExpectedSession]
+    val session = if (expected != null) expected.value else sessionKey
+    requireSession(session)
+    return session
+}
+
 class AuthTokenProvider : SessionTokenProvider {
+    override val accountId: String? get() = Clerk.userFlow.value?.id
     override val sessionKey: String?
         get() = Clerk.userFlow.value?.let { "${it.id}:${Clerk.session?.id}" }
     override val isSignedIn: Boolean

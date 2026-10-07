@@ -22,6 +22,8 @@ data class BookEntity(
     val addedAt: Long = System.currentTimeMillis(),
     /** Server UUID from POST /v1/books; null until first successful sync. */
     val remoteBookId: String? = null,
+    /** Verified Clerk account owning remoteBookId; null for unsynced/legacy books. */
+    val remoteOwnerId: String? = null,
     /** Epoch millis used for progress LWW as client_updated_at. */
     val progressUpdatedAt: Long = 0L,
     /** Serialized Readium Locator JSON for industrial reader resume. */

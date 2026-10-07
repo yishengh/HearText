@@ -303,7 +303,7 @@ class HearTextApi(
         onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)? = null
     ): File {
         val context = currentCoroutineContext()
-        val session = tokenProvider.sessionKey
+        val session = tokenProvider.requestSession()
         suspend fun token(refresh: Boolean = false): String {
             tokenProvider.requireSession(session)
             return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
@@ -352,7 +352,7 @@ class HearTextApi(
         jsonBody: String? = null,
         accept: String = "application/json"
     ): String {
-        val session = tokenProvider.sessionKey
+        val session = tokenProvider.requestSession()
         suspend fun token(refresh: Boolean = false): String {
             tokenProvider.requireSession(session)
             return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
@@ -395,7 +395,7 @@ class HearTextApi(
         jsonBody: String? = null,
         accept: String = "application/json"
     ): String {
-        val session = tokenProvider.sessionKey
+        val session = tokenProvider.requestSession()
         suspend fun token(refresh: Boolean = false): String {
             tokenProvider.requireSession(session)
             return tokenProvider.getToken(refresh).also { tokenProvider.requireSession(session) }
