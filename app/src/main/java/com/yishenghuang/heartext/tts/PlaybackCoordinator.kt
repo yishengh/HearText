@@ -48,6 +48,7 @@ data class PlaybackSession(
  * App-scoped owner of listen/playback. Survives reader navigation; drives
  * [HearTextPlaybackService] + [TtsController] + [AudioFocusHelper].
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackCoordinator(
     private val app: Application,
     private val scope: CoroutineScope,

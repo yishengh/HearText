@@ -371,7 +371,7 @@ class PageContentView(context: Context) : FrameLayout(context) {
         // Android 的 setBreakStrategy/setHyphenationFrequency 不检查相等性，即使值相同
         // 也会无效化已存在的 Layout，导致多余的 layout pass → 内容位移
         if (textView.breakStrategy != Layout.BREAK_STRATEGY_HIGH_QUALITY) {
-            textView.breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY
+            textView.breakStrategy = android.graphics.text.LineBreaker.BREAK_STRATEGY_HIGH_QUALITY
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             if (textView.hyphenationFrequency != Layout.HYPHENATION_FREQUENCY_NONE) {

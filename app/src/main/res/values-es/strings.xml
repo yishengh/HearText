@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tts_system_fallback">La voz sin conexión falló. Se usará la voz del sistema.</string>
+    <string name="tts_playback_failed">No se puede reproducir la voz. Inténtalo de nuevo o elige otra voz.</string>
     <string name="app_name">HearText</string>
     <string name="tab_store">Tienda</string>
     <string name="tab_library">Biblioteca</string>

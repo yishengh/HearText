@@ -407,7 +407,7 @@ fun ReaderScreen(
                             val idx = mark.chapterIndex ?: 0
                             val page = (mark.startOffset ?: 0).coerceAtLeast(0)
                             val title = chapters.getOrNull(idx)?.title
-                                ?: context.getString(R.string.reader_chapter_n, idx + 1)
+                                    ?: stringResource(R.string.reader_chapter_n, idx + 1)
                             val isCurrent =
                                 idx == chapterIndex && page == pageIndex
                             Column(
@@ -426,7 +426,7 @@ fun ReaderScreen(
                                     color = if (isCurrent) HearPurple else Color.Unspecified
                                 )
                                 Text(
-                                    text = context.getString(R.string.reader_page_n, page + 1),
+                                    text = stringResource(R.string.reader_page_n, page + 1),
                                     color = if (isCurrent) {
                                         HearPurple.copy(alpha = 0.75f)
                                     } else {
@@ -700,7 +700,7 @@ private fun ReadiumPagerHost(
     bookId: String,
     onLocator: (json: String, percent: Float) -> Unit
 ) {
-    val activity = LocalContext.current as FragmentActivity
+    val activity = androidx.activity.compose.LocalActivity.current as? FragmentActivity ?: return
     val containerId = remember { android.view.View.generateViewId() }
 
     DisposableEffect(bookId) {

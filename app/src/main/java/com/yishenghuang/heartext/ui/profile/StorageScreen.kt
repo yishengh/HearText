@@ -37,6 +37,7 @@ import java.util.Locale
 @Composable
 fun StorageScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val resources = androidx.compose.ui.platform.LocalResources.current
     var booksBytes by remember { mutableLongStateOf(0L) }
     var coversBytes by remember { mutableLongStateOf(0L) }
     var catalogBytes by remember { mutableLongStateOf(0L) }
@@ -127,7 +128,7 @@ fun StorageScreen(onBack: () -> Unit) {
                 runCatching {
                     File(context.filesDir, "catalog/.tmp").takeIf { it.exists() }?.deleteRecursively()
                 }
-                message = context.getString(R.string.storage_cleared, formatBytes(cleared))
+                message = resources.getString(R.string.storage_cleared, formatBytes(cleared))
                 refreshToken++
             },
             colors = ButtonDefaults.buttonColors(containerColor = HearPurple),

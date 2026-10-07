@@ -150,7 +150,7 @@ class PageLayoutEngine {
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(lineSpacingExtra, lineSpacingMultiplier)
             .setIncludePad(false)  // 关闭额外 padding，由 marginTop/marginBottom 精确控制
-            .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)  // 与 TextView 默认值一致，消除断行差异
+            .setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_HIGH_QUALITY)
             .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)  // CJK 文本不需要断字
             .build()
 

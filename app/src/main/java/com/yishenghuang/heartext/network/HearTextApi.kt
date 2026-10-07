@@ -3,6 +3,8 @@ package com.yishenghuang.heartext.network
 import com.yishenghuang.heartext.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -11,27 +13,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class HearTextApi(
-    private val tokenProvider: AuthTokenProvider,
+    private val tokenProvider: SessionTokenProvider,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    endpoint: String = BuildConfig.API_BASE_URL
 ) {
-    private val baseUrl: String
-        get() = BuildConfig.API_BASE_URL.trimEnd('/')
+    private val baseUrl: String = endpoint.trimEnd('/')
 
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank()
 
     suspend fun health(): Boolean = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl/health").get().build()
-        client.newCall(request).execute().use { it.isSuccessful }
+        client.newCall(request).consumeCancellable { it.isSuccessful }
     }
 
     suspend fun me(): ApiUser = withContext(Dispatchers.IO) {
@@ -301,47 +302,30 @@ class HearTextApi(
         destFile: File,
         onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)? = null
     ): File {
-        fun call(token: String): okhttp3.Response {
+        val context = currentCoroutineContext()
+        suspend fun call(token: String): File {
             val request = Request.Builder()
                 .url("$baseUrl$path")
                 .addHeader("Authorization", "Bearer $token")
                 .addHeader("Accept", "*/*")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                val err = response.body?.string().orEmpty()
-                response.close()
-                throw ApiHttpException(response.code, err)
+            return client.newCall(request).consumeCancellable { response ->
+                if (!response.isSuccessful) {
+                    throw ApiHttpException(response.code, response.body?.string().orEmpty())
+                }
+                val body = response.body ?: throw IOException("Empty download")
+                body.byteStream().use { input ->
+                    atomicDownload(input, destFile, body.contentLength(),
+                        checkActive = { context.ensureActive() }, onProgress = onProgress)
+                }
             }
-            return response
         }
-        val response = try {
+        return try {
             call(tokenProvider.getToken())
         } catch (e: ApiHttpException) {
             if (e.code == 401) call(tokenProvider.getToken(forceRefresh = true)) else throw e
         }
-        response.use { resp ->
-            val body = resp.body ?: throw ApiHttpException(resp.code, "empty body")
-            val contentLength = body.contentLength().takeIf { it > 0 }
-                ?: resp.header("Content-Length")?.toLongOrNull()
-                ?: -1L
-            destFile.parentFile?.mkdirs()
-            body.byteStream().use { input ->
-                FileOutputStream(destFile).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        total += read
-                        onProgress?.invoke(total, contentLength)
-                    }
-                }
-            }
-        }
-        return destFile
     }
 
     private suspend fun authorizedJson(method: String, path: String, jsonBody: String? = null): JSONObject {
@@ -362,7 +346,7 @@ class HearTextApi(
         jsonBody: String? = null,
         accept: String = "application/json"
     ): String {
-        fun call(token: String): Pair<Int, String> {
+        suspend fun call(token: String): Pair<Int, String> {
             val builder = Request.Builder()
                 .url(fullUrl)
                 .addHeader("Authorization", "Bearer $token")
@@ -376,8 +360,8 @@ class HearTextApi(
                 "PATCH" -> builder.patch(body ?: ByteArray(0).toRequestBody(null))
                 else -> error("Unsupported method $method")
             }
-            client.newCall(builder.build()).execute().use { response ->
-                return response.code to response.body?.string().orEmpty()
+            return client.newCall(builder.build()).consumeCancellable { response ->
+                response.code to response.body?.string().orEmpty()
             }
         }
         var (code, text) = call(tokenProvider.getToken())
@@ -398,7 +382,7 @@ class HearTextApi(
         accept: String = "application/json"
     ): String {
         val fullUrl = "$baseUrl$path"
-        fun call(token: String?): Pair<Int, String> {
+        suspend fun call(token: String?): Pair<Int, String> {
             val builder = Request.Builder()
                 .url(fullUrl)
                 .addHeader("Accept", accept)
@@ -414,16 +398,16 @@ class HearTextApi(
                 "PATCH" -> builder.patch(body ?: ByteArray(0).toRequestBody(null))
                 else -> error("Unsupported method $method")
             }
-            client.newCall(builder.build()).execute().use { response ->
-                return response.code to response.body?.string().orEmpty()
+            return client.newCall(builder.build()).consumeCancellable { response ->
+                response.code to response.body?.string().orEmpty()
             }
         }
         val token = if (tokenProvider.isSignedIn) {
-            runCatching { tokenProvider.getToken() }.getOrNull()
+            tokenProvider.getToken()
         } else null
         var (code, text) = call(token)
         if (code == 401 && tokenProvider.isSignedIn) {
-            val refreshed = runCatching { tokenProvider.getToken(forceRefresh = true) }.getOrNull()
+            val refreshed = tokenProvider.getToken(forceRefresh = true)
             val retry = call(refreshed)
             code = retry.first
             text = retry.second
@@ -699,4 +683,5 @@ class HearTextApi(
     }
 }
 
-class ApiHttpException(val code: Int, val body: String) : IOException("HTTP $code: ${body.take(300)}")
+// Server bodies may contain user content or internal diagnostics. Never expose them in logs/UI.
+class ApiHttpException(val code: Int, val body: String) : IOException("HTTP $code")

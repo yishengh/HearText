@@ -15,6 +15,13 @@ val localProperties = Properties().apply {
     }
 }
 
+// Opt-in local verification APK. Production configuration and release signing stay untouched.
+val localValidation = providers.gradleProperty("heartextValidation")
+    .map { it.toBooleanStrict() }.getOrElse(false)
+if (localValidation) {
+    layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("build/validation-app"))
+}
+
 android {
     namespace = "com.yishenghuang.heartext"
     compileSdk {
@@ -29,6 +36,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["allowCleartext"] = "false"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
@@ -47,6 +55,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (localValidation) {
+                applicationIdSuffix = ".validation"
+                buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:18080\"")
+                buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"\"")
+                buildConfigField("String", "TTS_API_BASE_URL", "\"http://10.0.2.2:18080\"")
+                manifestPlaceholders["allowCleartext"] = "true"
+            }
+        }
         release {
             optimization {
                 enable = false
@@ -77,6 +94,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    // All supported languages must remain available to the in-app language picker offline.
+    bundle {
+        language {
+            enableSplit = false
+        }
     }
     packaging {
         jniLibs {
@@ -162,6 +185,8 @@ dependencies {
     implementation(libs.firebase.crashlytics.ndk)
 
     testImplementation(libs.junit)
+    testImplementation("com.squareup.okhttp3:mockwebserver:${libs.versions.okhttp.get()}")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -173,10 +198,10 @@ dependencies {
 // Crashlytics needs google-services.json from the Firebase Console.
 // Without it, keep the project buildable and skip the plugins.
 val googleServicesFile = file("google-services.json")
-if (googleServicesFile.exists()) {
+if (googleServicesFile.exists() && !localValidation) {
     apply(plugin = "com.google.gms.google-services")
     apply(plugin = "com.google.firebase.crashlytics")
-} else {
+} else if (!localValidation) {
     logger.warn(
         "app/google-services.json missing — Firebase Crashlytics plugins not applied. " +
             "Download it from Firebase Console (Android app: com.yishenghuang.heartext)."

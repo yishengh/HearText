@@ -29,8 +29,8 @@ data class TtsSentence(
 class TtsController(
     private val app: android.app.Application,
     private val scope: CoroutineScope,
-    private val systemEngine: SystemTtsEngine,
-    private val offlineEngine: OfflineTtsEngine
+    private val systemEngine: TtsEngine,
+    private val offlineEngine: TtsEngine
 ) {
     private val _state = MutableStateFlow(TtsPlaybackState.Idle)
     val state: StateFlow<TtsPlaybackState> = _state.asStateFlow()
@@ -52,6 +52,7 @@ class TtsController(
 
     private var job: Job? = null
     private var mode: TtsMode = TtsMode.SYSTEM
+    @Volatile private var activeEngine: TtsEngine = systemEngine
     private var voiceId: String? = null
     private var sourceText: String = ""
     private var sentences: List<TtsSentence> = emptyList()
@@ -70,6 +71,7 @@ class TtsController(
 
     fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)
+        systemEngine.setVolume(this.volume)
         offlineEngine.setVolume(this.volume)
     }
 
@@ -85,6 +87,7 @@ class TtsController(
         val generation = playGeneration.incrementAndGet()
         job?.cancel()
         stopEnginesOnly()
+        activeEngine = selectEngine()
         sourceText = text
         sentences = splitSentencesWithRanges(text)
         if (sentences.isEmpty()) {
@@ -127,7 +130,7 @@ class TtsController(
                     val batchEnd = packBatchEnd(currentIndex)
                     val batchText = buildBatchText(currentIndex, batchEnd)
                     publishSentence(currentIndex)
-                    val engine = selectEngine()
+                    val engine = activeEngine
                     try {
                         speakBatch(engine, currentIndex, batchEnd, batchText)
                     } catch (e: CancellationException) {
@@ -144,21 +147,9 @@ class TtsController(
                                     "tts_fallback" to "system"
                                 )
                             )
-                            val detail = e.message?.take(160).orEmpty()
-                            android.util.Log.w(
-                                "TtsController",
-                                if (detail.isBlank()) {
-                                    "${engine.name} TTS failed, using system voice"
-                                } else {
-                                    "${engine.name} TTS failed ($detail), using system voice"
-                                }
-                            )
-                            _message.value = if (detail.isBlank()) {
-                                "离线音色失败，已改用系统语音"
-                            } else {
-                                "离线音色失败，已改用系统语音：$detail"
-                            }
+                            _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_system_fallback)
                             stopEnginesOnly()
+                            activeEngine = systemEngine
                             if (!isActive || !isCurrentGeneration(generation)) break
                             speakBatch(systemEngine, currentIndex, batchEnd, batchText)
                         } else {
@@ -185,7 +176,7 @@ class TtsController(
                         mapOf("tts_engine" to mode.name.lowercase(), "tts_voice_id" to (voiceId ?: ""))
                     )
                     _state.value = TtsPlaybackState.Error
-                    _message.value = e.message ?: "TTS error"
+                    _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_playback_failed)
                 }
             }
         }
@@ -307,14 +298,14 @@ class TtsController(
 
     fun pause() {
         if (_state.value != TtsPlaybackState.Speaking) return
-        selectEngine().pause()
+        activeEngine.pause()
         _state.value = TtsPlaybackState.Paused
     }
 
     fun resume() {
         if (_state.value != TtsPlaybackState.Paused) return
         _state.value = TtsPlaybackState.Speaking
-        selectEngine().resume()
+        activeEngine.resume()
         if (job?.isActive != true && sentences.isNotEmpty() && sourceText.isNotBlank()) {
             play(sourceText, currentIndex)
         }
@@ -409,7 +400,22 @@ class TtsController(
                     result += TtsSentence(trimmed, absStart, absStart + trimmed.length)
                 }
             }
-            if (result.isNotEmpty()) return result
+            if (result.isNotEmpty()) return result.flatMap { sentence ->
+                // Bound every engine request without dropping text or splitting surrogate pairs.
+                val chunks = ArrayList<TtsSentence>()
+                var offset = sentence.start
+                while (offset < sentence.end) {
+                    var end = minOf(offset + OFFLINE_BATCH_MAX_CHARS, sentence.end)
+                    if (end < sentence.end && text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()) end--
+                    if (end < sentence.end) {
+                        val space = text.lastIndexOf(' ', end - 1)
+                        if (space > offset + OFFLINE_BATCH_MAX_CHARS / 2) end = space + 1
+                    }
+                    chunks += TtsSentence(text.substring(offset, end), offset, end)
+                    offset = end
+                }
+                chunks
+            }
             val trimmed = text.trim()
             if (trimmed.isEmpty()) return emptyList()
             val s = text.indexOf(trimmed)

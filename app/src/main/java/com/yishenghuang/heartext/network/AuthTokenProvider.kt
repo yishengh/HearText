@@ -11,15 +11,20 @@ import kotlinx.coroutines.flow.first
 /**
  * Provides Clerk session JWTs for Authorization: Bearer &lt;token&gt;.
  */
-class AuthTokenProvider {
+interface SessionTokenProvider {
     val isSignedIn: Boolean
+    suspend fun getToken(forceRefresh: Boolean = false): String
+}
+
+class AuthTokenProvider : SessionTokenProvider {
+    override val isSignedIn: Boolean
         get() = Clerk.userFlow.value != null
 
     suspend fun awaitReady() {
         Clerk.isInitialized.first { it }
     }
 
-    suspend fun getToken(forceRefresh: Boolean = false): String {
+    override suspend fun getToken(forceRefresh: Boolean): String {
         awaitReady()
         if (Clerk.userFlow.value == null) {
             error("Not signed in")

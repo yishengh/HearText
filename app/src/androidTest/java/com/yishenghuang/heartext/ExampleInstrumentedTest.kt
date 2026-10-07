@@ -19,6 +19,13 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.yishenghuang.heartext", appContext.packageName)
+        assertEquals(BuildConfig.APPLICATION_ID, appContext.packageName)
+    }
+
+    @Test
+    fun localValidationCannotUseProductionCredentialsOrEndpoint() {
+        org.junit.Assume.assumeTrue(BuildConfig.APPLICATION_ID.endsWith(".validation"))
+        assertTrue(BuildConfig.CLERK_PUBLISHABLE_KEY.isEmpty())
+        assertEquals("http://10.0.2.2:18080", BuildConfig.API_BASE_URL)
     }
 }

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tts_system_fallback">Offline voice failed. Using the system voice.</string>
+    <string name="tts_playback_failed">Unable to play speech. Please try again or choose another voice.</string>
     <string name="app_name">HearText</string>
     <string name="tab_store">Store</string>
     <string name="tab_library">Library</string>

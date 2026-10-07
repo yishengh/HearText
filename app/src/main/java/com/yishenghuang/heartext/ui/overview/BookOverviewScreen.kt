@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,6 +101,7 @@ fun BookOverviewScreen(
                     CircularProgressIndicator(color = HearPurple)
                 }
             } else {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -135,7 +139,7 @@ fun BookOverviewScreen(
 
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(topStart = AppRadius.xl, topEnd = AppRadius.xl))
                         .background(AppColors.CardBg)
                         .padding(AppSpace.lg)
@@ -182,7 +186,7 @@ fun BookOverviewScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = AppColors.TextSecondary
                     )
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(AppSpace.lg))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -206,6 +210,7 @@ fun BookOverviewScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }

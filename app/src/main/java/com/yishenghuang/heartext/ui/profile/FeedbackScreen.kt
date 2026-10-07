@@ -57,6 +57,7 @@ fun FeedbackScreen(onBack: () -> Unit) {
     val okMsg = stringResource(R.string.feedback_ok)
     val comingSoon = stringResource(R.string.feedback_coming_soon)
     val failGeneric = stringResource(R.string.feedback_fail)
+    val resources = androidx.compose.ui.platform.LocalResources.current
 
     SettingsSubpageScaffold(title = stringResource(R.string.feedback_title), onBack = onBack) {
         Text(
@@ -147,7 +148,7 @@ fun FeedbackScreen(onBack: () -> Unit) {
                         status = when (e) {
                             is ApiHttpException -> when (e.code) {
                                 404, 501 -> comingSoon
-                                else -> context.getString(R.string.feedback_fail_code, e.code)
+                                else -> resources.getString(R.string.feedback_fail_code, e.code)
                             }
                             else -> e.message?.take(80) ?: failGeneric
                         }

@@ -337,20 +337,7 @@ class BookRepository(
         ensureMissingCovers()
     }
 
-    private val chapterCache = object {
-        @Volatile private var key: String? = null
-        @Volatile private var chapters: List<EpubChapter> = emptyList()
-
-        fun get(path: String, length: Long, modified: Long): List<EpubChapter>? {
-            val k = "$path|$length|$modified"
-            return if (key == k) chapters else null
-        }
-
-        fun put(path: String, length: Long, modified: Long, value: List<EpubChapter>) {
-            key = "$path|$length|$modified"
-            chapters = value
-        }
-    }
+    private val chapterCache = ChapterCache()
 
     suspend fun loadChapterTexts(book: BookEntity): List<EpubChapter> = withContext(Dispatchers.IO) {
         when (book.format) {

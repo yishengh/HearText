@@ -5,6 +5,8 @@ import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +40,11 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.yishenghuang.heartext.R
 import com.yishenghuang.heartext.ui.theme.AppColors
 import com.yishenghuang.heartext.ui.theme.HearPurple
 import com.yishenghuang.heartext.ui.theme.LocalIsDarkTheme
@@ -103,6 +110,7 @@ fun FloatingTabBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
+                .selectableGroup()
                 .drawBehind {
                     val shadowRadius = 28.dp.toPx()
                     val cornerRadius = size.height / 2f
@@ -152,14 +160,23 @@ private fun TabItemView(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val label = stringResource(when (tab.tab) {
+        MainTab.Store -> R.string.tab_store
+        MainTab.Library -> R.string.tab_library
+        MainTab.Profile -> R.string.tab_profile
+    })
     Box(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(
+            .semantics { contentDescription = label }
+            .selectable(
+                selected = isSelected,
+                role = Role.Tab,
                 indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) { onClick() },
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(

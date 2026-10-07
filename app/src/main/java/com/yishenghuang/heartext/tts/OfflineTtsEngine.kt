@@ -56,8 +56,9 @@ class OfflineTtsEngine(
             error("离线语音包不完整（需要 tokens.txt + espeak-ng-data），请重新下载")
         }
         // Keep offline synthesis chunks short — long generate() is heavy / crash-prone.
-        val clipped = text.trim().take(MAX_GENERATE_CHARS)
+        val clipped = text.trim()
         require(clipped.isNotEmpty()) { "朗读文本为空" }
+        require(clipped.length <= MAX_GENERATE_CHARS) { "Offline TTS chunk exceeds safe synthesis limit" }
         stopRequested = false
         paused = false
         mutex.withLock {

@@ -60,6 +60,24 @@ Place `app/google-services.json` from the Firebase Console (Android app id `com.
 
 First build downloads `sherpa-onnx` into `app/libs/` via the `downloadSherpaAar` task.
 
+### Isolated local verification (no production writes)
+
+On Windows, run `powershell -File tools/verify-local.ps1`. It builds the debug-only
+`com.yishenghuang.heartext.validation` APK, runs unit tests and Android Lint, and uses
+Android Studio's bundled JDK if `JAVA_HOME` is absent. This opt-in build has no Clerk
+key, skips the Firebase plugins, and points to `http://10.0.2.2:18080` (the emulator's
+host loopback). Existing `local.properties` and release signing are not changed.
+Use **Continue offline** for local reading. HTTP is allowed only in this validation
+debug build. Normal builds require HTTPS.
+
+With an emulator running, add `-Connected -Serial emulator-5556` (using its actual
+ADB serial) to run device tests on that device only. Tests of HTTP
+retry and cancellation use an in-process MockWebServer, never the configured API.
+Reports are under `build/validation-app/reports/`; the isolated APK is at
+`build/validation-app/outputs/apk/debug/app-debug.apk`. The verification script uses
+a single-use Gradle daemon to avoid retained Windows test JAR locks. Current scope and evidence are in
+[`docs/LOCAL_HARDENING.md`](docs/LOCAL_HARDENING.md).
+
 ### Release signing
 
 Set the `HEARTEXT_*` signing properties in `local.properties`, keep the keystore under `keystore/` (gitignored), then:

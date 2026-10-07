@@ -176,7 +176,7 @@ fun ListenSettingsScreen(
                             val label = when (progress.phase) {
                                 OfflineDownloadPhase.Downloading -> {
                                     val pct = (progress.fraction * 100).roundToInt()
-                                    context.getString(
+                                    stringResource(
                                         R.string.listen_downloading_pct,
                                         pct,
                                         formatBytes(progress.bytesRead) +

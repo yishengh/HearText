@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tts_system_fallback">离线音色不可用，已改用系统语音。</string>
+    <string name="tts_playback_failed">无法播放语音，请重试或选择其他音色。</string>
     <string name="app_name">HearText</string>
     <string name="tab_store">书城</string>
     <string name="tab_library">书架</string>
