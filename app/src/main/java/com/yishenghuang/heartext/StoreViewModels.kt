@@ -111,6 +111,7 @@ class CatalogDetailViewModel(
     private val catalogId: String
 ) : ViewModel() {
     private val catalog = app.container.catalogRepository
+    private var downloadJob: kotlinx.coroutines.Job? = null
 
     private val _book = MutableStateFlow<ApiCatalogBook?>(null)
     val book: StateFlow<ApiCatalogBook?> = _book.asStateFlow()
@@ -143,15 +144,23 @@ class CatalogDetailViewModel(
 
     fun downloadAndShelf() {
         val current = _book.value ?: return
-        viewModelScope.launch {
-            _busy.value = true
+        if (_busy.value) return
+        _busy.value = true
+        downloadJob = viewModelScope.launch {
             _error.value = null
-            runCatching {
+            try {
                 _shelvedBook.value = catalog.downloadAndShelf(current)
-            }.onFailure { _error.value = it.message ?: "Download failed" }
-            _busy.value = false
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _error.value = app.getString(R.string.toast_download_failed)
+            } finally {
+                _busy.value = false
+            }
         }
     }
+
+    fun cancelDownload() { downloadJob?.cancel() }
 
     /** Consume one-shot open-after-download event so back won't re-open. */
     fun consumeShelvedBook() {

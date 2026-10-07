@@ -62,8 +62,7 @@ class AppContainer(app: Application) {
         api,
         authTokenProvider,
         database.bookDao(),
-        coverStore,
-        cloudSync
+        coverStore
     )
     val annotationRepository = AnnotationRepository(
         database.annotationDao(),

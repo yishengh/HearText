@@ -35,12 +35,17 @@ class LocalReaderSmokeTest {
         compose.onNodeWithContentDescription(libraryLabel).performClick()
         compose.onNodeWithContentDescription(libraryLabel).assertIsSelected()
         compose.waitUntil(30_000) {
-            compose.onAllNodesWithText("Alice", substring = true).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("library-book-OL138052W").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onAllNodesWithText("Alice", substring = true).onFirst().performClick()
+        compose.onNodeWithTag("library-book-OL138052W").assertIsDisplayed().performClick()
         val readLabel = compose.activity.getString(R.string.keep_reading)
-        compose.waitUntil(30_000) {
-            compose.onAllNodesWithText(readLabel).fetchSemanticsNodes().isNotEmpty()
+        try {
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithText(readLabel).fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (failure: Throwable) {
+            compose.onRoot(useUnmergedTree = true).printToLog("HearTextSmoke")
+            throw failure
         }
         compose.onNodeWithText(readLabel).performScrollTo().assertIsDisplayed().performClick()
         waitForReader()

@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -152,6 +153,11 @@ fun CatalogDetailScreen(
                                 strokeWidth = 2.dp,
                                 color = androidx.compose.ui.graphics.Color.White
                             ) else Text(stringResource(R.string.catalog_download))
+                        }
+                    }
+                    if (busy) {
+                        TextButton(onClick = viewModel::cancelDownload) {
+                            Text(stringResource(R.string.action_cancel))
                         }
                     }
                     Text(stringResource(R.string.reader_toc), style = MaterialTheme.typography.titleMedium)

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -29,6 +30,31 @@ interface BookDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(book: BookEntity)
+
+    /** Resolve account collisions and preserve user fields in the same transaction as replacement. */
+    @Transaction
+    suspend fun saveCatalogDownload(download: BookEntity): BookEntity {
+        val byRemote = download.remoteBookId?.let { getBookByRemoteId(it) }
+        val byId = getBook(download.id)
+        fun compatible(book: BookEntity?): Boolean = book != null &&
+            book.source == BookSource.CATALOG && book.catalogBookId == download.catalogBookId &&
+            (book.remoteOwnerId == null || book.remoteOwnerId == download.remoteOwnerId) &&
+            (book.remoteBookId == null || book.remoteBookId == download.remoteBookId)
+        val existing = byRemote?.takeIf { compatible(it) } ?: byId?.takeIf { compatible(it) }
+        val saved = if (existing != null) existing.copy(
+            filePath = download.filePath, remoteBookId = download.remoteBookId,
+            remoteOwnerId = download.remoteOwnerId, totalChapters = download.totalChapters,
+            coverUrl = download.coverUrl ?: existing.coverUrl,
+            coverPath = existing.coverPath ?: download.coverPath,
+            coverSource = existing.coverSource ?: download.coverSource,
+            description = existing.description ?: download.description
+        ) else download.copy(id = if (byId == null) download.id else java.util.UUID.randomUUID().toString())
+        upsert(saved)
+        return saved
+    }
+
+    @Query("SELECT COUNT(*) FROM books WHERE filePath = :path")
+    suspend fun countFileReferences(path: String): Int
 
     @Update
     suspend fun update(book: BookEntity)

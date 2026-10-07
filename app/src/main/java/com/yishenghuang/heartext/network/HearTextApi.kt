@@ -171,7 +171,9 @@ class HearTextApi(
         }
 
     suspend fun downloadCatalogBook(catalogId: String, destFile: File): File = withContext(Dispatchers.IO) {
-        streamToFile("/v1/catalog/$catalogId/download?mode=stream", destFile)
+        streamToFile("/v1/catalog/$catalogId/download?mode=stream", destFile) { read, size ->
+            if (read > 64L * 1024 * 1024 || size > 64L * 1024 * 1024) throw IOException("Book exceeds size limit")
+        }
     }
 
     suspend fun addCatalogToShelf(catalogId: String): ApiShelfFromCatalog = withContext(Dispatchers.IO) {
