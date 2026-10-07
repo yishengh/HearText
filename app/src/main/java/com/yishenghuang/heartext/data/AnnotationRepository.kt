@@ -1,46 +1,77 @@
 package com.yishenghuang.heartext.data
 
-import com.yishenghuang.heartext.network.AuthTokenProvider
-import com.yishenghuang.heartext.network.HearTextApi
+import com.yishenghuang.heartext.network.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.time.Instant
 import java.util.UUID
 
 class AnnotationRepository(
     private val dao: AnnotationDao,
     private val api: HearTextApi,
-    private val auth: AuthTokenProvider
+    private val auth: SessionTokenProvider,
+    private val books: BookDao
 ) {
     fun observe(bookId: String): Flow<List<AnnotationEntity>> = dao.observeForBook(bookId)
 
-    suspend fun syncFromServer(bookId: String, remoteBookId: String?) = withContext(Dispatchers.IO) {
-        if (!auth.isSignedIn || !api.isConfigured || remoteBookId.isNullOrBlank()) return@withContext
-        val remote = api.listAnnotations(remoteBookId)
-        val entities = remote.map {
-            AnnotationEntity(
-                id = it.clientAnnotationId.ifBlank { it.id },
-                bookId = bookId,
-                clientAnnotationId = it.clientAnnotationId.ifBlank { it.id },
-                type = it.type,
-                chapterId = it.chapterId,
-                chapterIndex = it.chapterIndex,
-                startOffset = it.startOffset,
-                endOffset = it.endOffset,
-                selectedText = it.selectedText,
-                color = it.color,
-                note = it.note,
-                remoteId = it.id,
-                clientUpdatedAt = parseIso(it.clientUpdatedAt) ?: System.currentTimeMillis()
-            )
+    private val syncLock = Mutex()
+
+    suspend fun syncAll() {
+        for (book in books.getAll()) {
+            try { syncFromServer(book.id, book.remoteBookId) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Other books can still sync. */ }
         }
-        dao.upsertAll(entities)
     }
+
+    suspend fun syncFromServer(bookId: String, remoteBookId: String?) =
+        withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
+            val owner = auth.accountId ?: return@withContext
+            if (!api.isConfigured) return@withContext
+            val session = auth.requestSession()
+            syncLock.withLock {
+                auth.requireSession(session)
+                val book = books.getBook(bookId) ?: return@withLock
+                val remoteId = book.remoteBookId ?: return@withLock
+                if (book.remoteOwnerId != owner || (remoteBookId != null && remoteBookId != remoteId)) return@withLock
+                val before = dao.listIncludingDeleted(bookId)
+                val remote = api.listAnnotations(remoteId)
+                auth.requireSession(session)
+                for (item in remote) {
+                    if (item.bookId != remoteId) continue
+                    val timestamp = runCatching { Instant.parse(item.clientUpdatedAt).toEpochMilli() }.getOrNull() ?: continue
+                    dao.mergeRemote(AnnotationEntity(
+                        id = UUID.randomUUID().toString(), bookId = bookId,
+                        clientAnnotationId = item.clientAnnotationId.ifBlank { item.id }, type = item.type,
+                        chapterId = item.chapterId, chapterIndex = item.chapterIndex,
+                        startOffset = item.startOffset, endOffset = item.endOffset,
+                        selectedText = item.selectedText, color = item.color, note = item.note,
+                        remoteId = item.id, clientUpdatedAt = timestamp, remoteOwnerId = owner
+                    ))
+                }
+                // This endpoint returns the complete book list (no pagination).
+                val present = remote.map { it.id }.toSet()
+                for (local in before) {
+                    val id = local.remoteId ?: continue
+                    if (local.remoteOwnerId == owner && id !in present) {
+                        dao.markRemoteAbsent(local.id, owner, id, local.clientUpdatedAt)
+                    }
+                }
+                for (local in dao.listIncludingDeleted(bookId)) {
+                    auth.requireSession(session)
+                    if (local.remoteOwnerId != null && local.remoteOwnerId != owner) continue
+                    try {
+                        if (local.deleted) deleteRemote(local, owner)
+                        else if (local.remoteId == null) push(local, remoteId, owner)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* Durable local state is retried on the next sync. */ }
+                }
+            }
+        }
 
     suspend fun addBookmark(
         bookId: String,
@@ -64,7 +95,7 @@ class AnnotationRepository(
             note = note,
             clientUpdatedAt = now
         )
-        dao.upsert(entity)
+        dao.insertLocal(entity)
         pushIfPossible(entity, remoteBookId)
         entity
     }
@@ -89,7 +120,7 @@ class AnnotationRepository(
             .values
             .map { group -> group.maxBy { it.clientUpdatedAt }.id }
             .toSet()
-        bookmarks.filter { it.id !in keepIds }.forEach { dao.delete(it.id) }
+        bookmarks.filter { it.id !in keepIds }.forEach { delete(it) }
     }
 
     suspend fun addHighlight(
@@ -117,7 +148,7 @@ class AnnotationRepository(
             note = note,
             clientUpdatedAt = now
         )
-        dao.upsert(entity)
+        dao.insertLocal(entity)
         pushIfPossible(entity, remoteBookId)
         entity
     }
@@ -141,48 +172,55 @@ class AnnotationRepository(
             note = note,
             clientUpdatedAt = now
         )
-        dao.upsert(entity)
+        dao.insertLocal(entity)
         pushIfPossible(entity, remoteBookId)
         entity
     }
 
     suspend fun delete(entity: AnnotationEntity) = withContext(Dispatchers.IO) {
-        dao.delete(entity.id)
-        val remoteId = entity.remoteId
-        if (auth.isSignedIn && api.isConfigured && !remoteId.isNullOrBlank()) {
-            runCatching { api.deleteAnnotation(remoteId) }
+        dao.markDeleted(entity.id, System.currentTimeMillis())
+        val book = books.getBook(entity.bookId)
+        pushIfPossible(entity, book?.remoteBookId)
+    }
+
+    private suspend fun pushIfPossible(entity: AnnotationEntity, remoteBookId: String?) =
+        withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
+            val owner = auth.accountId ?: return@withContext
+            if (!api.isConfigured || remoteBookId == null) return@withContext
+            val session = auth.requestSession()
+            syncLock.withLock {
+                auth.requireSession(session)
+                val book = books.getBook(entity.bookId) ?: return@withLock
+                if (book.remoteOwnerId != owner || book.remoteBookId != remoteBookId) return@withLock
+                val current = dao.get(entity.id) ?: return@withLock
+                if (current.remoteOwnerId != null && current.remoteOwnerId != owner) return@withLock
+                try {
+                    if (current.deleted) deleteRemote(current, owner)
+                    else if (current.remoteId == null) push(current, remoteBookId, owner)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Local edit succeeded; sync will retry. */ }
+            }
         }
+
+    private suspend fun push(entity: AnnotationEntity, remoteBookId: String, owner: String) {
+        val created = api.createAnnotation(
+            clientAnnotationId = entity.clientAnnotationId, bookId = remoteBookId, type = entity.type,
+            clientUpdatedAtIso = Instant.ofEpochMilli(entity.clientUpdatedAt).toString(),
+            chapterId = entity.chapterId, chapterIndex = entity.chapterIndex,
+            startOffset = entity.startOffset, endOffset = entity.endOffset,
+            selectedText = entity.selectedText, color = entity.color, note = entity.note
+        )
+        check(created.bookId == remoteBookId && created.clientAnnotationId == entity.clientAnnotationId)
+        dao.bindRemote(entity.id, created.id, owner)
+        // A user can delete while POST is in flight. Bind only, never restore its old content.
+        dao.get(entity.id)?.takeIf { it.deleted }?.let { deleteRemote(it, owner) }
     }
 
-    private suspend fun pushIfPossible(entity: AnnotationEntity, remoteBookId: String?) {
-        if (!auth.isSignedIn || !api.isConfigured || remoteBookId.isNullOrBlank()) return
-        runCatching {
-            val created = api.createAnnotation(
-                clientAnnotationId = entity.clientAnnotationId,
-                bookId = remoteBookId,
-                type = entity.type,
-                clientUpdatedAtIso = toIso(entity.clientUpdatedAt),
-                chapterId = entity.chapterId,
-                chapterIndex = entity.chapterIndex,
-                startOffset = entity.startOffset,
-                endOffset = entity.endOffset,
-                selectedText = entity.selectedText,
-                color = entity.color,
-                note = entity.note
-            )
-            dao.upsert(entity.copy(remoteId = created.id))
-        }
+    private suspend fun deleteRemote(entity: AnnotationEntity, owner: String) {
+        if (!entity.deleted || entity.deleteSynced || entity.remoteOwnerId != owner) return
+        val remoteId = entity.remoteId ?: return
+        try { api.deleteAnnotation(remoteId) }
+        catch (failure: ApiHttpException) { if (failure.code != 404) throw failure }
+        dao.acknowledgeDelete(entity.id, remoteId)
     }
-
-    private fun toIso(epochMs: Long): String {
-        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-        fmt.timeZone = TimeZone.getTimeZone("UTC")
-        return fmt.format(Date(epochMs))
-    }
-
-    private fun parseIso(value: String): Long? = runCatching {
-        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-        fmt.timeZone = TimeZone.getTimeZone("UTC")
-        fmt.parse(value.take(19))?.time
-    }.getOrNull()
 }

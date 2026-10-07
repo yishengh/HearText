@@ -18,7 +18,8 @@ class BookRepository(
     private val bookDao: BookDao,
     private val coverStore: CoverStore,
     private val cloudSync: CloudSyncRepository? = null,
-    private val annotationDao: AnnotationDao? = null
+    private val annotationDao: AnnotationDao? = null,
+    private val annotationRepository: AnnotationRepository? = null
 ) {
     private val booksDir: File
         get() = File(context.filesDir, "books").also { it.mkdirs() }
@@ -351,10 +352,15 @@ class BookRepository(
     }
 
     suspend fun syncOnLogin() {
-        runCatching {
+        try {
             cloudSync?.pushAllLocalBooks()
             cloudSync?.pullAndMergeProgress()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Leave failed books available for a subsequent sync.
         }
+        annotationRepository?.syncAll()
         ensureMissingCovers()
     }
 

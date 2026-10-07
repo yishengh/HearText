@@ -16,7 +16,7 @@ class DatabaseMigrationTest {
     @Test fun oldestAndPreviousSchemasPreserveBooksAndAnnotations() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
-        for (version in listOf(1, 7)) {
+        for (version in listOf(1, 7, 8)) {
             val name = "migration-${UUID.randomUUID()}.db"
             val helper = FrameworkSQLiteOpenHelperFactory().create(
                 SupportSQLiteOpenHelper.Configuration.builder(context).name(name)
@@ -31,7 +31,7 @@ class DatabaseMigrationTest {
                             db.execSQL("""INSERT INTO books (id,title,author,format,filePath,coverPath,
                                 lastChapterIndex,lastOffset,progressPercent,totalChapters,addedAt)
                                 VALUES ('kept','Title','Author','TXT','/local/book.txt',NULL,2,37,42.5,5,1234)""")
-                            if (version == 7) {
+                            if (version >= 7) {
                                 db.execSQL("UPDATE books SET remoteBookId='remote', progressUpdatedAt=5678, locatorJson='saved'")
                                 db.execSQL("""INSERT INTO annotations (id,bookId,clientAnnotationId,type,clientUpdatedAt)
                                     VALUES ('note','kept','note','note',4321)""")
@@ -48,10 +48,11 @@ class DatabaseMigrationTest {
                 assertEquals(42.5f, book.progressPercent)
                 assertEquals("/local/book.txt", book.filePath)
                 assertNull(book.remoteOwnerId)
-                if (version == 7) {
+                if (version >= 7) {
                     assertEquals("remote", book.remoteBookId)
                     assertEquals("saved", book.locatorJson)
                     assertEquals(5678L, book.progressUpdatedAt)
+                    assertFalse(database.annotationDao().get("note")!!.deleted)
                     database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM annotations").use {
                         assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
                     }

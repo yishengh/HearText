@@ -56,7 +56,13 @@ class AppContainer(app: Application) {
     val database = AppDatabase.get(app)
     val coverStore = com.yishenghuang.heartext.data.CoverStore(app)
     val cloudSync = CloudSyncRepository(database.bookDao(), api, authTokenProvider, coverStore)
-    val bookRepository = BookRepository(app, database.bookDao(), coverStore, cloudSync, database.annotationDao())
+    val annotationRepository = AnnotationRepository(
+        database.annotationDao(),
+        api,
+        authTokenProvider,
+        database.bookDao()
+    )
+    val bookRepository = BookRepository(app, database.bookDao(), coverStore, cloudSync, database.annotationDao(), annotationRepository)
     val catalogRepository = CatalogRepository(
         app,
         api,
@@ -64,11 +70,7 @@ class AppContainer(app: Application) {
         database.bookDao(),
         coverStore
     )
-    val annotationRepository = AnnotationRepository(
-        database.annotationDao(),
-        api,
-        authTokenProvider
-    )
+
     val offlineVoiceRepository = OfflineVoiceRepository(app, api, authTokenProvider)
     val readerPreferences = ReaderPreferences(app)
     val appPreferences = com.yishenghuang.heartext.data.AppPreferences(app)
