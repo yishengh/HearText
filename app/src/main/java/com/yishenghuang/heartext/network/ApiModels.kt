@@ -131,7 +131,8 @@ data class ApiOfflineVoice(
     val downloadCount: Int,
     val isFeatured: Boolean,
     val hasSample: Boolean,
-    val sampleUrl: String?
+    val sampleUrl: String?,
+    val checksumSha256: String? = null
 )
 
 data class ApiOfflineVoiceList(

@@ -190,6 +190,9 @@ fun ListenSettingsScreen(
                                 OfflineDownloadPhase.Installing -> installingLabel
                             }
                             Text(label, style = MaterialTheme.typography.bodySmall, color = HearPurple)
+                            TextButton(onClick = viewModel::cancelVoiceDownload) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
                             if (progress.contentLength > 0 || progress.fraction > 0f) {
                                 LinearProgressIndicator(
                                     progress = { progress.fraction },

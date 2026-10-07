@@ -96,3 +96,16 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新增系统引擎 5 项 JVM 竞态/失败测试和 PCM 4 项测试；首轮发现 JUnit 测试返回类型错误，已修复并重跑。
 - `tools/verify-local.ps1 -Connected -Serial emulator-5582` 完整通过（1m22s）：28 项 JVM 测试、10 项设备测试，均 0 failures / 0 skipped。设备新增验证：本地系统音色朗读自然完成、暂停/恢复/停止；真实 AudioTrack 的 250ms PCM 全部消费后返回；stop 不发章节完成事件。模拟器以 no-audio 启动，此证据证明原生播放路径和状态，不代表人耳音质验收。
 - 尚未验证真实 sherpa 离线模型合成、实际电话/其他 App 抢焦点、锁屏媒体按钮。音色安装的校验/事务替换、试听取消和未经请求的 Profile 资源下载仍需修复。
+
+### 第五轮：音色包与试听
+
+- 安装先暂存、校验、受限解压、验证模型与资源后再替换目录；替换有回滚副本和重启恢复入口。失败/取消清理 staging、zip、part，保留旧音色。按包串行安装，ID 拒绝路径字符/保留目录形式。
+- 读取 API 已有的可选 `checksum_sha256` 并校验；兼容未返回该字段的旧响应。ZIP/TAR 拒绝路径逃逸，TAR 拒绝链接和特殊文件，限制文件数与解压大小。共享 espeak 下载也可取消并采用暂存替换。
+- ONNX 预检改为读取 protobuf ModelProto 结构和 metadata，不再对整个文件搜索单个字符串；检查 sherpa VITS 所需的 sample_rate、n_speakers、language、comment 和数值字段。依据：[sherpa-onnx v1.13.4 源码](https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.4/sherpa-onnx/csrc/offline-tts-vits-model.cc)、[ONNX ModelProto](https://github.com/onnx/onnx/blob/main/onnx/onnx.proto)。这不是完整 ONNX 图验证，后端仍应只供应经过 ONNX 校验及实际合成验证的模型。
+- 停止试听取消 ViewModel 加载协程并使 repository 请求代次失效，下载/prepare 迟到结果不再启动 MediaPlayer；旧播放器回调不能清除新播放器。页面原有 ON_STOP/onDispose 均调用此停止路径。
+- Profile 初始化/刷新/选择音色不再自动联网下载 espeak；安装才准备资源。已安装音色扫描移至 IO。下载有可见取消按钮和安装阶段状态，失败提示本地化。
+- 已安装同 ID 音色替换后，离线引擎比较模型文件长度/修改时间，下一次播放重新加载模型。
+- 新增 `tools/prepare-offline-fixture.py` 与 `verify-local.ps1 -OfflineFixture`：从官方获取 Amy 模型，仅本地 loopback 服务提供测试包，校验后装入独立测试私有目录。固定测试文本不涉及用户文档，未对生产服务发写请求。
+- 官方压缩包 SHA-256：`c70f5284a09a7fd4ed203b39b2ff51cac1432b422b852eb647b481dade3cf639`；本次测试 ZIP：`d4887d3ce241089598891e0cd3d0525ab2bb485f50a346dbd52db78826cd9e83`，67,304,989 bytes。生成信息存 `build/local-validation/voice-fixtures/provenance.json`，大文件不入 Git。
+- 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m3s）：33 项 JVM、14 项设备测试全部通过，无跳过；Lint 0 errors、133 warnings、1 hint。涵盖真实离线模型安装、合成自然完成、暂停/恢复/停止，以及坏包保留旧文件、取消清理、试听停止后无迟到播放。未加该开关时真实模型测试明确 skipped，不能当作模型验证通过。
+- 跨项目要求：后端 `checksum_sha256` 应对应实际下载 ZIP 的精确字节；应校验原始 ONNX 图和 sherpa 必需元数据并做合成 smoke test，避免 native 对不合法图的不可恢复错误。客户端本轮已验证官方兼容模型，没有修改后端。

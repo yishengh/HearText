@@ -672,7 +672,8 @@ class HearTextApi(
         downloadCount = json.optInt("download_count", 0),
         isFeatured = json.optBoolean("is_featured", false),
         hasSample = json.optBoolean("has_sample", false),
-        sampleUrl = json.optStringOrNull("sample_url")
+        sampleUrl = json.optStringOrNull("sample_url"),
+        checksumSha256 = json.optStringOrNull("checksum_sha256")
     )
 
     private fun String.encodeUrl(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())

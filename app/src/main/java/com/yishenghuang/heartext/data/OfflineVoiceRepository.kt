@@ -4,9 +4,18 @@ import android.content.Context
 import android.media.MediaPlayer
 import android.util.Log
 import com.yishenghuang.heartext.network.ApiOfflineVoice
-import com.yishenghuang.heartext.network.AuthTokenProvider
+import com.yishenghuang.heartext.network.SessionTokenProvider
+import com.yishenghuang.heartext.network.atomicDownload
+import com.yishenghuang.heartext.network.consumeCancellable
 import com.yishenghuang.heartext.network.HearTextApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -37,8 +46,8 @@ data class OfflineVoicePack(
     val sampleRate: Int
 ) {
     val isPlayable: Boolean
-        get() = tokens != null && tokens.exists() &&
-            dataDir != null && dataDir.isDirectory &&
+        get() = tokens != null && tokens.length() > 0 &&
+            dataDir != null && listOf("phontab", "phondata", "phonindex").all { File(dataDir, it).length() > 0 } &&
             hasSherpaOnnxMetadata(modelOnnx)
 
     companion object {
@@ -46,42 +55,7 @@ data class OfflineVoicePack(
          * sherpa-onnx aborts the whole process if Piper ONNX lacks embedded
          * metadata (e.g. sample_rate). Detect before constructing OfflineTts.
          */
-        fun hasSherpaOnnxMetadata(onnx: File): Boolean {
-            if (!onnx.isFile || onnx.length() < 64L) return false
-            return runCatching {
-                onnx.inputStream().buffered().use { input ->
-                    val needle = "sample_rate".toByteArray(Charsets.US_ASCII)
-                    val window = ByteArray(64 * 1024)
-                    var carry = ByteArray(0)
-                    while (true) {
-                        val n = input.read(window)
-                        if (n <= 0) break
-                        val chunk = if (carry.isEmpty()) {
-                            window.copyOf(n)
-                        } else {
-                            carry + window.copyOf(n)
-                        }
-                        if (indexOf(chunk, needle) >= 0) return@use true
-                        carry = if (chunk.size >= needle.size - 1) {
-                            chunk.copyOfRange(chunk.size - (needle.size - 1), chunk.size)
-                        } else {
-                            chunk
-                        }
-                    }
-                    false
-                }
-            }.getOrDefault(false)
-        }
-
-        private fun indexOf(data: ByteArray, needle: ByteArray): Int {
-            outer@ for (i in 0..(data.size - needle.size)) {
-                for (j in needle.indices) {
-                    if (data[i + j] != needle[j]) continue@outer
-                }
-                return i
-            }
-            return -1
-        }
+        fun hasSherpaOnnxMetadata(onnx: File): Boolean = OnnxMetadata.supportsVits(onnx)
     }
 }
 
@@ -92,7 +66,7 @@ data class OfflineVoicePack(
 class OfflineVoiceRepository(
     private val app: Context,
     private val api: HearTextApi,
-    private val auth: AuthTokenProvider
+    private val auth: SessionTokenProvider
 ) {
     private val root: File
         get() = File(app.filesDir, "offline_voices").also { it.mkdirs() }
@@ -105,6 +79,9 @@ class OfflineVoiceRepository(
 
     private val espeakMutex = Mutex()
     private val sampleMutex = Mutex()
+    private val installMutex = Mutex()
+    private val sampleLock = Any()
+    private val sampleGeneration = AtomicLong()
     @Volatile private var samplePlayer: MediaPlayer? = null
 
     suspend fun featured(language: String? = null): List<ApiOfflineVoice> = withContext(Dispatchers.IO) {
@@ -120,7 +97,11 @@ class OfflineVoiceRepository(
     fun installedIds(): Set<String> = listInstalled().map { it.id }.toSet()
 
     fun listInstalled(): List<InstalledOfflineVoice> {
-        val dirs = root.listFiles()?.filter { it.isDirectory && it.name != "_shared" } ?: return emptyList()
+        root.listFiles()?.filter { it.name.startsWith('.') && it.name.endsWith(".backup") }?.forEach {
+            val id = it.name.removePrefix(".").removeSuffix(".backup")
+            if (runCatching { VoicePackageFiles.safeId(id) }.isSuccess) VoicePackageFiles.recover(File(root, id))
+        }
+        val dirs = root.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') && it.name != "_shared" } ?: return emptyList()
         return dirs.mapNotNull { dir ->
             if (!isInstalled(dir.name)) return@mapNotNull null
             readMeta(dir.name) ?: InstalledOfflineVoice(
@@ -137,7 +118,12 @@ class OfflineVoiceRepository(
     fun isInstalled(voiceId: String): Boolean = resolvePack(voiceId)?.isPlayable == true
 
     fun resolvePack(voiceId: String): OfflineVoicePack? {
-        val dir = File(root, voiceId)
+        val dir = File(root, VoicePackageFiles.safeId(voiceId))
+        VoicePackageFiles.recover(dir)
+        return resolvePack(dir, voiceId, readMeta(voiceId)?.sampleRate ?: 22050)
+    }
+
+    private fun resolvePack(dir: File, voiceId: String, sampleRate: Int): OfflineVoicePack? {
         if (!dir.isDirectory) return null
         // Repair older installs that only had .onnx / .onnx.json.
         runCatching { normalizePackDir(dir) }
@@ -158,14 +144,13 @@ class OfflineVoiceRepository(
             isEspeakDataDir(sharedEspeakDir) -> sharedEspeakDir
             else -> localEspeak
         }
-        val meta = readMeta(voiceId)
         return OfflineVoicePack(
             voiceId = voiceId,
             modelOnnx = onnx,
             tokens = tokens,
             lexicon = lexicon,
             dataDir = dataDir,
-            sampleRate = meta?.sampleRate ?: 22050
+            sampleRate = sampleRate
         )
     }
 
@@ -182,37 +167,40 @@ class OfflineVoiceRepository(
         onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
         requireSignedIn()
-        val zip = File(root, "${voice.id}.zip")
-        api.downloadOfflineVoice(voice.id, zip, onProgress)
-        val outDir = File(root, voice.id).also {
-            if (it.exists()) it.deleteRecursively()
-            it.mkdirs()
-        }
-        unzipTo(zip, outDir)
-        zip.delete()
-        writeMeta(voice)
-        ensureSharedEspeakNgData()
-        normalizePackDir(outDir)
-        val pack = resolvePack(voice.id)
-        if (pack == null || !pack.isPlayable) {
-            val missing = buildList {
-                if (pack?.modelOnnx == null) add(".onnx")
-                if (pack?.tokens == null) add("tokens.txt")
-                if (pack?.dataDir == null || !isEspeakDataDir(pack.dataDir)) add("espeak-ng-data")
-                if (pack?.modelOnnx != null &&
-                    !OfflineVoicePack.hasSherpaOnnxMetadata(pack.modelOnnx)
-                ) {
-                    add("sherpa ONNX metadata(sample_rate)")
+        val id = VoicePackageFiles.safeId(voice.id)
+        installMutex.withLock {
+            val staging = File(root, ".$id-${UUID.randomUUID()}.staging").apply { mkdirs() }
+            val zip = File(root, ".$id-${UUID.randomUUID()}.zip")
+            val coroutine = currentCoroutineContext()
+            try {
+                api.downloadOfflineVoice(id, zip) { read, total ->
+                    require(read <= 1024L * 1024 * 1024) { "Voice archive is too large" }
+                    onProgress?.invoke(read, total)
                 }
+                VoicePackageFiles.verifyChecksum(zip, voice.checksumSha256) { coroutine.ensureActive() }
+                VoicePackageFiles.unzip(zip, staging) { coroutine.ensureActive() }
+                flattenSingleRootIfNeeded(staging)
+                normalizePackDir(staging)
+                var pack = resolvePack(staging, id, voice.sampleRate)
+                require(pack != null && OfflineVoicePack.hasSherpaOnnxMetadata(pack.modelOnnx) && (pack.tokens?.length() ?: 0L) > 0L) {
+                    "Invalid or unsupported offline voice package"
+                }
+                if (!isEspeakDataDir(pack.dataDir)) {
+                    ensureSharedEspeakNgData()
+                    pack = resolvePack(staging, id, voice.sampleRate)
+                }
+                require(pack?.isPlayable == true) { "Incomplete offline voice package" }
+                writeMeta(voice, staging)
+                coroutine.ensureActive()
+                val destination = File(root, id)
+                VoicePackageFiles.commit(staging, destination)
+                destination
+            } finally {
+                staging.deleteRecursively()
+                zip.delete()
             }
-            error(
-                "语音包不完整（缺 ${missing.joinToString(" / ")}）。" +
-                    "原始 Piper .onnx 需用 sherpa-onnx 转换后再上传。"
-            )
         }
-        outDir
     }
-
     /**
      * Ensures shared espeak-ng-data exists (required by all Piper voices).
      * Safe to call before speaking if an older install lacked it.
@@ -233,83 +221,64 @@ class OfflineVoiceRepository(
         onFinished: (() -> Unit)? = null
     ) = withContext(Dispatchers.IO) {
         requireSignedIn()
+        VoicePackageFiles.safeId(voiceId)
+        val request = sampleGeneration.incrementAndGet()
+        synchronized(sampleLock) { stopSampleLocked() }
         sampleMutex.withLock {
-            stopSampleLocked()
-            val sample = File(root, "${voiceId}_sample.mp3")
-            if (!sample.exists() || sample.length() == 0L) {
-                api.downloadOfflineVoiceSample(voiceId, sample)
+            val coroutine = currentCoroutineContext()
+            fun checkCurrent() {
+                coroutine.ensureActive()
+                if (request != sampleGeneration.get()) throw kotlinx.coroutines.CancellationException("Sample stopped")
             }
+            checkCurrent()
+            val sample = File(root, "${voiceId}_sample.mp3")
+            if (!sample.exists() || sample.length() == 0L) api.downloadOfflineVoiceSample(voiceId, sample)
+            checkCurrent()
             val player = MediaPlayer()
+            fun finish() {
+                val current = synchronized(sampleLock) {
+                    if (samplePlayer === player && sampleGeneration.get() == request) {
+                        stopSampleLocked()
+                        true
+                    } else false
+                }
+                if (current) onFinished?.invoke()
+            }
             try {
                 player.setDataSource(sample.absolutePath)
-                player.setOnCompletionListener {
-                    stopSample()
-                    onFinished?.invoke()
-                }
-                player.setOnErrorListener { _, _, _ ->
-                    stopSample()
-                    onFinished?.invoke()
-                    true
-                }
+                player.setOnCompletionListener { finish() }
+                player.setOnErrorListener { _, _, _ -> finish(); true }
                 player.prepare()
-                samplePlayer = player
-                player.start()
-            } catch (t: Throwable) {
-                runCatching { player.release() }
-                if (samplePlayer === player) samplePlayer = null
-                throw t
+                synchronized(sampleLock) {
+                    checkCurrent()
+                    samplePlayer = player
+                    player.start()
+                }
+            } catch (failure: Throwable) {
+                synchronized(sampleLock) {
+                    if (samplePlayer === player) samplePlayer = null
+                    runCatching { player.release() }
+                }
+                throw failure
             }
         }
+    }
+
+    internal fun isSamplePlaying(): Boolean = synchronized(sampleLock) {
+        runCatching { samplePlayer?.isPlaying == true }.getOrDefault(false)
     }
 
     fun stopSample() {
-        // Avoid deadlock if called from MediaPlayer callbacks while holding sampleMutex.
-        if (sampleMutex.tryLock()) {
-            try {
-                stopSampleLocked()
-            } finally {
-                sampleMutex.unlock()
-            }
-        } else {
-            // Best-effort stop without waiting for playSample's lock.
-            runCatching {
-                samplePlayer?.stop()
-                samplePlayer?.release()
-            }
-            samplePlayer = null
-        }
+        sampleGeneration.incrementAndGet()
+        synchronized(sampleLock) { stopSampleLocked() }
     }
 
     private fun stopSampleLocked() {
-        val player = samplePlayer
+        val player = samplePlayer ?: return
         samplePlayer = null
-        if (player == null) return
-        runCatching {
-            if (player.isPlaying) player.stop()
-        }
+        runCatching { player.stop() }
         runCatching { player.release() }
     }
-
-    private fun unzipTo(zip: File, outDir: File) {
-        ZipInputStream(zip.inputStream().buffered()).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val relative = entry.name
-                    .replace('\\', '/')
-                    .trimStart('/')
-                    .takeIf { it.isNotBlank() && !it.contains("..") }
-                if (relative != null && !entry.isDirectory) {
-                    val target = File(outDir, relative)
-                    target.parentFile?.mkdirs()
-                    target.outputStream().use { zis.copyTo(it) }
-                }
-                zis.closeEntry()
-                entry = zis.nextEntry
-            }
-        }
-        flattenSingleRootIfNeeded(outDir)
-    }
-
     /** If zip wrapped everything in one folder, lift contents up one level. */
     private fun flattenSingleRootIfNeeded(outDir: File) {
         val children = outDir.listFiles()?.filter { it.name != "heartext_meta.json" } ?: return
@@ -374,65 +343,66 @@ class OfflineVoiceRepository(
         }
     }
 
-    private fun downloadAndExtractEspeakNgData() {
-        sharedEspeakDir.parentFile?.mkdirs()
-        if (sharedEspeakDir.exists()) sharedEspeakDir.deleteRecursively()
-        val archive = File(sharedDir, "espeak-ng-data.tar.bz2")
-        val url = URI(ESPEAK_DATA_URL).toURL()
-        Log.i(TAG, "Downloading shared espeak-ng-data…")
-        url.openStream().use { input ->
-            archive.outputStream().use { output -> input.copyTo(output) }
-        }
-        require(archive.length() > 100_000L) { "espeak-ng-data download failed" }
-        extractTarBz2(archive, sharedDir)
-        archive.delete()
-        // Tarball usually contains top-level espeak-ng-data/
-        if (!isEspeakDataDir(sharedEspeakDir)) {
-            val nested = sharedDir.walkTopDown()
-                .firstOrNull { it.isDirectory && it.name.equals("espeak-ng-data", ignoreCase = true) }
-            if (nested != null && nested != sharedEspeakDir) {
-                nested.copyRecursively(sharedEspeakDir, overwrite = true)
+    private suspend fun downloadAndExtractEspeakNgData() {
+        val staging = File(sharedDir, ".extract-${UUID.randomUUID()}").apply { mkdirs() }
+        val archive = File(sharedDir, ".espeak-${UUID.randomUUID()}.tar.bz2")
+        val coroutine = currentCoroutineContext()
+        try {
+            val client = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS).build()
+            client.newCall(Request.Builder().url(ESPEAK_DATA_URL).build()).consumeCancellable { response ->
+                check(response.isSuccessful) { "Shared voice data download failed" }
+                val body = response.body ?: error("Empty shared voice response")
+                atomicDownload(body.byteStream(), archive, body.contentLength(), { coroutine.ensureActive() }) { read, _ ->
+                    require(read <= 100L * 1024 * 1024) { "Shared voice archive is too large" }
+                }
             }
+            extractTarBz2(archive, staging) { coroutine.ensureActive() }
+            val extracted = File(staging, "espeak-ng-data")
+            require(isEspeakDataDir(extracted)) { "Incomplete shared voice data" }
+            coroutine.ensureActive()
+            VoicePackageFiles.commit(extracted, sharedEspeakDir)
+        } finally {
+            archive.delete()
+            staging.deleteRecursively()
         }
-        require(isEspeakDataDir(sharedEspeakDir)) {
-            "espeak-ng-data extract failed"
-        }
-        Log.i(TAG, "Shared espeak-ng-data ready at ${sharedEspeakDir.absolutePath}")
     }
 
-    private fun extractTarBz2(archive: File, destDir: File) {
-        destDir.mkdirs()
+    private fun extractTarBz2(archive: File, destDir: File, checkActive: () -> Unit) {
+        var total = 0L
+        var count = 0
         BufferedInputStream(archive.inputStream()).use { fileIn ->
             BZip2CompressorInputStream(fileIn).use { bzIn ->
-                TarArchiveInputStream(bzIn).use { tarIn ->
-                    var entry = tarIn.nextEntry
-                    while (entry != null) {
-                        val name = entry.name.replace('\\', '/').trimStart('/')
-                        if (name.isNotBlank() && !name.contains("..")) {
-                            val out = File(destDir, name)
-                            if (entry.isDirectory) {
-                                out.mkdirs()
-                            } else {
-                                out.parentFile?.mkdirs()
-                                out.outputStream().use { tarIn.copyTo(it) }
+                TarArchiveInputStream(bzIn).use { tar ->
+                    while (true) {
+                        checkActive()
+                        val entry = tar.nextEntry ?: break
+                        require(++count <= 20_000 && !entry.isSymbolicLink && !entry.isLink) { "Unsupported shared voice archive" }
+                        val out = VoicePackageFiles.entryFile(destDir, entry.name)
+                        if (entry.isDirectory) out.mkdirs() else {
+                            require(entry.isFile) { "Unsupported archive entry" }
+                            out.parentFile?.mkdirs()
+                            out.outputStream().use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    checkActive()
+                                    val size = tar.read(buffer)
+                                    if (size < 0) break
+                                    total += size
+                                    require(total <= 256L * 1024 * 1024) { "Shared voice data is too large" }
+                                    output.write(buffer, 0, size)
+                                }
                             }
                         }
-                        entry = tarIn.nextEntry
                     }
                 }
             }
         }
     }
 
-    private fun isEspeakDataDir(dir: File?): Boolean {
-        if (dir == null || !dir.isDirectory) return false
-        // phontab is present in standard espeak-ng-data trees
-        return File(dir, "phontab").isFile ||
-            File(dir, "lang").isDirectory ||
-            dir.list()?.isNotEmpty() == true && File(dir, "voices").exists()
-    }
-
-    private fun writeMeta(voice: ApiOfflineVoice) {
+    private fun isEspeakDataDir(dir: File?): Boolean = dir != null &&
+        listOf("phontab", "phondata", "phonindex").all { File(dir, it).length() > 0L }
+    private fun writeMeta(voice: ApiOfflineVoice, directory: File) {
         val meta = JSONObject()
             .put("id", voice.id)
             .put("name", voice.name)
@@ -440,7 +410,7 @@ class OfflineVoiceRepository(
             .put("engine", voice.engine)
             .put("model_type", voice.modelType)
             .put("sample_rate", voice.sampleRate)
-        File(root, voice.id).resolve("heartext_meta.json").writeText(meta.toString())
+        directory.resolve("heartext_meta.json").writeText(meta.toString())
     }
 
     private fun readMeta(voiceId: String): InstalledOfflineVoice? {

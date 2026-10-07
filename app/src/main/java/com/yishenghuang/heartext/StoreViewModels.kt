@@ -281,11 +281,6 @@ class ProfileViewModel(
         )
 
     init {
-        refreshInstalled()
-        viewModelScope.launch {
-            runCatching { offline.ensureSharedEspeakNgData() }
-            refreshInstalled()
-        }
         refresh()
     }
 
@@ -297,7 +292,6 @@ class ProfileViewModel(
                     _offlineVoices.value = offline.featured()
                 }
             }.onFailure { _message.value = it.message }
-            runCatching { offline.ensureSharedEspeakNgData() }
             refreshInstalled()
         }
     }
@@ -313,39 +307,44 @@ class ProfileViewModel(
 
     fun downloadOfflineVoice(voice: ApiOfflineVoice) {
         if (_busy.value) return
-        viewModelScope.launch {
-            _busy.value = true
+        _busy.value = true
+        voiceDownloadJob = viewModelScope.launch {
             _downloadProgress.value = OfflineDownloadProgress(
                 voiceId = voice.id,
                 bytesRead = 0L,
                 contentLength = voice.fileSizeBytes.coerceAtLeast(0L),
                 phase = OfflineDownloadPhase.Downloading
             )
-            runCatching {
+            try {
                 offline.downloadAndInstall(voice) { read, total ->
                     val length = if (total > 0) total else voice.fileSizeBytes
                     _downloadProgress.value = OfflineDownloadProgress(
                         voiceId = voice.id,
                         bytesRead = read,
                         contentLength = length,
-                        phase = OfflineDownloadPhase.Downloading
+                        phase = if (length > 0 && read >= length) OfflineDownloadPhase.Installing else OfflineDownloadPhase.Downloading
                     )
                 }
                 refreshInstalled()
                 _message.value = app.getString(R.string.toast_voice_installed, voice.name)
-            }.onFailure {
-                _message.value = it.message ?: app.getString(R.string.toast_download_failed)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _message.value = app.getString(R.string.toast_download_failed)
+            } finally {
+                _downloadProgress.value = null
+                _busy.value = false
             }
-            _downloadProgress.value = null
-            _busy.value = false
         }
     }
 
+    private var voiceDownloadJob: kotlinx.coroutines.Job? = null
+    fun cancelVoiceDownload() { voiceDownloadJob?.cancel() }
+
     fun selectOfflineVoice(voice: ApiOfflineVoice) {
         viewModelScope.launch {
-            runCatching { offline.ensureSharedEspeakNgData() }
             refreshInstalled()
-            if (!offline.isInstalled(voice.id)) {
+            if (!isInstalled(voice.id)) {
                 _message.value = app.getString(R.string.toast_need_full_offline)
                 return@launch
             }
@@ -371,27 +370,32 @@ class ProfileViewModel(
 
     private val _samplePlayingId = MutableStateFlow<String?>(null)
     val samplePlayingId: StateFlow<String?> = _samplePlayingId.asStateFlow()
+    private var sampleJob: kotlinx.coroutines.Job? = null
 
     fun playSample(voiceId: String) {
         if (_samplePlayingId.value == voiceId) {
             stopSample()
             return
         }
-        viewModelScope.launch {
-            stopSample()
-            _samplePlayingId.value = voiceId
-            runCatching {
+        stopSample()
+        _samplePlayingId.value = voiceId
+        sampleJob = viewModelScope.launch {
+            try {
                 offline.playSample(voiceId) {
                     _samplePlayingId.value = null
                 }
-            }.onFailure {
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
                 _samplePlayingId.value = null
-                _message.value = it.message
+                _message.value = app.getString(R.string.tts_playback_failed)
             }
         }
     }
 
     fun stopSample() {
+        sampleJob?.cancel()
+        sampleJob = null
         offline.stopSample()
         _samplePlayingId.value = null
     }
@@ -403,8 +407,8 @@ class ProfileViewModel(
 
     fun isInstalled(voiceId: String) = voiceId in _installedIds.value
 
-    private fun refreshInstalled() {
-        _installedIds.value = offline.installedIds()
+    private suspend fun refreshInstalled() {
+        _installedIds.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { offline.installedIds() }
     }
 
     private var deletingAccount = false

@@ -78,6 +78,19 @@ Reports are under `build/validation-app/reports/`; the isolated APK is at
 a single-use Gradle daemon to avoid retained Windows test JAR locks. Current scope and evidence are in
 [`docs/LOCAL_HARDENING.md`](docs/LOCAL_HARDENING.md).
 
+To also verify installation and synthesis with an official sherpa-onnx Piper model:
+
+```powershell
+.\tools\verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture
+```
+
+This optional check needs Python 3.12+ and initially downloads about 67 MB from
+the official sherpa-onnx GitHub release. The script stages the fixture under
+`build/local-validation/voice-fixtures`, records its hashes, starts a loopback-only
+HTTP server for the emulator, and stops that server when verification finishes.
+It uses no production account or API. Without `-OfflineFixture`, the one real-model
+test is explicitly skipped; the simulated installation/cancellation tests still run.
+
 ### Release signing
 
 Set the `HEARTEXT_*` signing properties in `local.properties`, keep the keystore under `keystore/` (gitignored), then:

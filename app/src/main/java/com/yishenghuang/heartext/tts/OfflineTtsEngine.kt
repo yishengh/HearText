@@ -39,6 +39,7 @@ class OfflineTtsEngine(
     private val mutex = Mutex()
     private var tts: OfflineTts? = null
     private var loadedVoiceId: String? = null
+    private var loadedModelStamp: Pair<Long, Long>? = null
     @Volatile private var track: AudioTrack? = null
     private val generation = AtomicLong()
     @Volatile private var closed = false
@@ -130,7 +131,8 @@ class OfflineTtsEngine(
     }
 
     private fun ensureModelLocked(pack: OfflineVoicePack) {
-        if (tts != null && loadedVoiceId == pack.voiceId) return
+        val stamp = pack.modelOnnx.length() to pack.modelOnnx.lastModified()
+        if (tts != null && loadedVoiceId == pack.voiceId && loadedModelStamp == stamp) return
         releaseModelLocked()
         val tokensPath = pack.tokens?.absolutePath.orEmpty()
         val dataDirPath = pack.dataDir?.absolutePath.orEmpty()
@@ -165,6 +167,7 @@ class OfflineTtsEngine(
             )
         }
         loadedVoiceId = pack.voiceId
+        loadedModelStamp = stamp
         Log.i(TAG, "Loaded offline voice ${pack.voiceId}")
     }
 
@@ -339,6 +342,7 @@ class OfflineTtsEngine(
         runCatching { tts?.release() }
         tts = null
         loadedVoiceId = null
+        loadedModelStamp = null
     }
 
     companion object {
