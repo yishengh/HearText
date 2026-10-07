@@ -262,8 +262,7 @@ fun ProfileScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    viewModel.deleteAccount()
-                    onSignOut()
+                    viewModel.deleteAccount(onDeleted = onSignOut)
                 }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {

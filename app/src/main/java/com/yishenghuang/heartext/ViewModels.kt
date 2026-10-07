@@ -49,11 +49,16 @@ class LibraryViewModel(
 
     fun importBook(uri: android.net.Uri, onDone: (BookEntity) -> Unit = {}) {
         viewModelScope.launch {
-            runCatching { bookRepository.importFromUri(uri) }
-                .onSuccess(onDone)
-                .onFailure {
-                    _error.value = it.message ?: app.getString(R.string.error_import_failed)
-                }
+            try {
+                val book = bookRepository.importFromUri(uri)
+                onDone(book)
+                // Local import completes before optional cloud synchronization.
+                bookRepository.syncAfterImport(book)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _error.value = app.getString(R.string.error_import_failed)
+            }
         }
     }
 

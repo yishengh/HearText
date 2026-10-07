@@ -33,6 +33,22 @@ interface BookDao {
     @Update
     suspend fun update(book: BookEntity)
 
+    @Query("UPDATE books SET coverPath = :path, coverSource = :source WHERE id = :id")
+    suspend fun updateCover(id: String, path: String?, source: CoverSource?)
+
+    @Query("UPDATE books SET description = :description WHERE id = :id")
+    suspend fun updateDescription(id: String, description: String)
+
+    @Query("UPDATE books SET totalChapters = :count WHERE id = :id")
+    suspend fun updateChapterCount(id: String, count: Int)
+
+    @Query("""UPDATE books SET lastChapterIndex = :chapter, lastOffset = :offset,
+        progressPercent = :percent, progressUpdatedAt = :updatedAt,
+        locatorJson = COALESCE(:locator, locatorJson), totalChapters = COALESCE(:chapterCount, totalChapters)
+        WHERE id = :id AND progressUpdatedAt <= :updatedAt""")
+    suspend fun updateProgress(id: String, chapter: Int, offset: Int, percent: Float,
+        updatedAt: Long, locator: String?, chapterCount: Int?)
+
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun delete(id: String)
 

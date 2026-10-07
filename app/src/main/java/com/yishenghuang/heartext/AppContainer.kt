@@ -56,7 +56,7 @@ class AppContainer(app: Application) {
     val database = AppDatabase.get(app)
     val coverStore = com.yishenghuang.heartext.data.CoverStore(app)
     val cloudSync = CloudSyncRepository(database.bookDao(), api, authTokenProvider, coverStore)
-    val bookRepository = BookRepository(app, database.bookDao(), coverStore, cloudSync)
+    val bookRepository = BookRepository(app, database.bookDao(), coverStore, cloudSync, database.annotationDao())
     val catalogRepository = CatalogRepository(
         app,
         api,

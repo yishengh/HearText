@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="error_account_delete">No se pudo eliminar tu cuenta. La sesión sigue abierta. Inténtalo de nuevo.</string>
     <string name="tts_system_fallback">La voz sin conexión falló. Se usará la voz del sistema.</string>
     <string name="tts_playback_failed">No se puede reproducir la voz. Inténtalo de nuevo o elige otra voz.</string>
     <string name="app_name">HearText</string>

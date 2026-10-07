@@ -407,13 +407,24 @@ class ProfileViewModel(
         _installedIds.value = offline.installedIds()
     }
 
-    fun deleteAccount() {
+    private var deletingAccount = false
+
+    fun deleteAccount(onDeleted: () -> Unit) {
+        if (deletingAccount) return
+        deletingAccount = true
         viewModelScope.launch {
-            runCatching {
+            try {
                 api.deleteMe()
                 _user.value = null
                 _message.value = app.getString(R.string.toast_account_deleted)
-            }.onFailure { _message.value = it.message }
+                onDeleted()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _message.value = app.getString(R.string.error_account_delete)
+            } finally {
+                deletingAccount = false
+            }
         }
     }
 

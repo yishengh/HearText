@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="error_account_delete">Impossible de supprimer votre compte. Vous êtes toujours connecté. Réessayez.</string>
     <string name="tts_system_fallback">La voix hors ligne a échoué. La voix du système sera utilisée.</string>
     <string name="tts_playback_failed">Impossible de lire le texte. Réessayez ou choisissez une autre voix.</string>
     <string name="app_name">HearText</string>

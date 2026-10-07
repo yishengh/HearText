@@ -32,15 +32,12 @@ object EpubParser {
         ZipFile(epubFile).use { zip ->
             val containerEntry = zip.getEntry("META-INF/container.xml")
                 ?: error("Invalid EPUB: missing container.xml")
-            val containerXml = zip.getInputStream(containerEntry).bufferedReader().readText()
-            val opfPath = Regex("""full-path="([^"]+)"""")
-                .find(containerXml)
-                ?.groupValues
-                ?.get(1)
+            val containerXml = readEntry(zip, containerEntry).toString(Charsets.UTF_8)
+            val opfPath = attributes(containerXml)["full-path"]
                 ?: error("Invalid EPUB: missing OPF path")
 
             val opfEntry = zip.getEntry(opfPath) ?: error("Invalid EPUB: missing OPF")
-            val opfXml = zip.getInputStream(opfEntry).bufferedReader().readText()
+            val opfXml = readEntry(zip, opfEntry).toString(Charsets.UTF_8)
             val opfDir = opfPath.substringBeforeLast('/', missingDelimiterValue = "")
 
             val bookTitle = Regex("""<dc:title[^>]*>([^<]+)</dc:title>""", RegexOption.IGNORE_CASE)
@@ -51,22 +48,16 @@ object EpubParser {
                 ?: "Unknown"
 
             val manifest = mutableMapOf<String, String>()
-            Regex(
-                """<item\b[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*/?>""",
-                setOf(RegexOption.IGNORE_CASE)
-            ).findAll(opfXml).forEach { match ->
-                manifest[match.groupValues[1]] = match.groupValues[2]
-            }
-            Regex(
-                """<item\b[^>]*href="([^"]+)"[^>]*id="([^"]+)"[^>]*/?>""",
-                setOf(RegexOption.IGNORE_CASE)
-            ).findAll(opfXml).forEach { match ->
-                manifest[match.groupValues[2]] = match.groupValues[1]
+            Regex("""<item\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(opfXml).forEach { match ->
+                val attrs = attributes(match.value)
+                val id = attrs["id"]
+                val href = attrs["href"]
+                if (id != null && href != null) manifest[id] = href
             }
 
-            val spineIds = Regex("""<itemref\b[^>]*idref="([^"]+)"""", RegexOption.IGNORE_CASE)
+            val spineIds = Regex("""<itemref\b[^>]*>""", RegexOption.IGNORE_CASE)
                 .findAll(opfXml)
-                .map { it.groupValues[1] }
+                .mapNotNull { attributes(it.value)["idref"] }
                 .toList()
 
             val ncxHref = Regex(
@@ -79,18 +70,25 @@ object EpubParser {
                 val fullPath = resolvePath(opfDir, href)
                 val entry = findEntry(zip, fullPath, href) ?: return@let emptyMap()
                 parseNcxTitles(
-                    ncxXml = zip.getInputStream(entry).bufferedReader().readText(),
+                    ncxXml = readEntry(zip, entry).toString(Charsets.UTF_8),
                     opfDir = opfDir
                 )
             } ?: emptyMap()
 
+            require(spineIds.size <= 10_000) { "EPUB contains too many chapters" }
+            var totalTextBytes = 0L
+            val legacyChapterHrefs = mutableSetOf<String>()
             val chapters = spineIds.mapIndexedNotNull { index, id ->
                 val href = manifest[id] ?: return@mapIndexedNotNull null
                 val normalized = resolvePath(opfDir, href)
                 val entry = findEntry(zip, normalized, href) ?: return@mapIndexedNotNull null
-                val html = zip.getInputStream(entry).bufferedReader().readText()
+                val bytes = readEntry(zip, entry)
+                totalTextBytes += bytes.size
+                require(totalTextBytes <= 64L * 1024 * 1024) { "EPUB text is too large" }
+                val html = bytes.toString(Charsets.UTF_8)
+                if (htmlToPlainText(html, includeHead = true).length >= 40) legacyChapterHrefs += normalized
                 val plain = htmlToPlainText(html)
-                if (plain.isBlank() || plain.length < 40) return@mapIndexedNotNull null
+                if (plain.isBlank()) return@mapIndexedNotNull null
 
                 val heading = firstHeading(html)
                 val htmlTitle = Regex("""<title[^>]*>([^<]+)</title>""", RegexOption.IGNORE_CASE)
@@ -116,23 +114,56 @@ object EpubParser {
             val coverBytes = coverHref?.let { href ->
                 val fullPath = resolvePath(opfDir, href)
                 val entry = findEntry(zip, fullPath, href)
-                entry?.let { zip.getInputStream(it).readBytes() }
+                entry?.let { readEntry(zip, it) }
             }
 
+            require(chapters.isNotEmpty()) { "Invalid EPUB: no readable chapters" }
             return EpubBook(
                 title = bookTitle,
                 author = author,
-                chapters = chapters.ifEmpty {
-                    listOf(
-                        EpubChapter(
-                            title = "Content",
-                            href = "",
-                            plainText = "Unable to extract chapters from this EPUB."
-                        )
-                    )
-                },
+                chapters = preserveLegacyChapterIndices(chapters, legacyChapterHrefs),
                 coverBytes = coverBytes
             )
+        }
+    }
+
+    /** Retain short spine text without renumbering chapters saved by previous app versions. */
+    private fun preserveLegacyChapterIndices(chapters: List<EpubChapter>, legacyHrefs: Set<String>): List<EpubChapter> {
+        if (chapters.none { it.href in legacyHrefs }) return chapters
+        val retained = ArrayList<EpubChapter>()
+        val pending = StringBuilder()
+        for (chapter in chapters) {
+            if (chapter.href !in legacyHrefs) {
+                pending.append(chapter.plainText).append("\n\n")
+            } else {
+                retained += chapter.copy(plainText = pending.toString() + chapter.plainText)
+                pending.clear()
+            }
+        }
+        if (pending.isNotBlank()) {
+            val last = retained.last()
+            retained[retained.lastIndex] = last.copy(plainText = last.plainText + "\n\n" + pending.toString().trim())
+        }
+        return retained
+    }
+
+    private fun attributes(tag: String): Map<String, String> =
+        Regex("""([\w:-]+)\s*=\s*(['"])(.*?)\2""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(tag).associate { it.groupValues[1].lowercase(Locale.ROOT) to decodeEntities(it.groupValues[3]) }
+
+    private fun readEntry(zip: ZipFile, entry: java.util.zip.ZipEntry): ByteArray {
+        val limit = 8 * 1024 * 1024
+        require(entry.size <= limit) { "EPUB entry is too large" }
+        return zip.getInputStream(entry).use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                require(output.size() + count <= limit) { "EPUB entry is too large" }
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
         }
     }
 
@@ -242,8 +273,11 @@ object EpubParser {
         return true
     }
 
-    fun htmlToPlainText(html: String): String {
-        var text = html
+    fun htmlToPlainText(html: String): String = htmlToPlainText(html, includeHead = false)
+
+    private fun htmlToPlainText(html: String, includeHead: Boolean): String {
+        val body = if (includeHead) html else html.replace(Regex("""<head\b[^>]*>[\s\S]*?</head>""", RegexOption.IGNORE_CASE), "")
+        var text = body
             .replace(Regex("""<(script|style|nav)[^>]*>[\s\S]*?</\1>""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""<(br|BR)\s*/?>"""), "\n")
             .replace(Regex("""</p>""", RegexOption.IGNORE_CASE), "\n\n")
@@ -266,8 +300,12 @@ object EpubParser {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
-        .replace(Regex("""&#(\d+);""")) { m ->
-            m.groupValues[1].toIntOrNull()?.toChar()?.toString() ?: m.value
+        .replace(Regex("""&#(x[0-9a-f]+|\d+);""", RegexOption.IGNORE_CASE)) { m ->
+            val raw = m.groupValues[1]
+            val code = if (raw.startsWith("x", ignoreCase = true)) raw.drop(1).toIntOrNull(16) else raw.toIntOrNull()
+            if (code != null && Character.isValidCodePoint(code) && code !in 0xD800..0xDFFF) {
+                String(Character.toChars(code))
+            } else m.value
         }
 
     /**

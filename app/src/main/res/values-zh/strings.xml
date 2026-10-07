@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="error_account_delete">未能删除账号，您仍处于登录状态，请重试。</string>
     <string name="tts_system_fallback">离线音色不可用，已改用系统语音。</string>
     <string name="tts_playback_failed">无法播放语音，请重试或选择其他音色。</string>
     <string name="app_name">HearText</string>

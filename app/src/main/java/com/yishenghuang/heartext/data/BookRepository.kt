@@ -4,6 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.yishenghuang.heartext.network.atomicDownload
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -13,7 +17,8 @@ class BookRepository(
     private val context: Context,
     private val bookDao: BookDao,
     private val coverStore: CoverStore,
-    private val cloudSync: CloudSyncRepository? = null
+    private val cloudSync: CloudSyncRepository? = null,
+    private val annotationDao: AnnotationDao? = null
 ) {
     private val booksDir: File
         get() = File(context.filesDir, "books").also { it.mkdirs() }
@@ -27,8 +32,14 @@ class BookRepository(
     suspend fun getMostRecent(): BookEntity? = bookDao.getMostRecent()
 
     suspend fun ensureSampleBooks() = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("sample_seeded", false)) {
+            ensureMissingCovers()
+            return@withContext
+        }
         ensureAliceBook()
         if (bookDao.count() > 0) {
+            prefs.edit().putBoolean("sample_seeded", true).commit()
             ensureMissingCovers()
             return@withContext
         }
@@ -69,6 +80,7 @@ class BookRepository(
             progressPercent = 0f
         )
         bookDao.upsert(book)
+        prefs.edit().putBoolean("sample_seeded", true).commit()
     }
 
     /**
@@ -135,12 +147,7 @@ class BookRepository(
                 existingPath = book.coverPath,
                 existingSource = book.coverSource
             )
-            bookDao.update(
-                book.copy(
-                    coverPath = path,
-                    coverSource = source
-                )
-            )
+            bookDao.updateCover(book.id, path, source)
         }
     }
 
@@ -156,7 +163,8 @@ class BookRepository(
                 when {
                     mime.contains("epub") -> BookFormat.EPUB
                     mime.contains("pdf") -> BookFormat.PDF
-                    else -> BookFormat.TXT
+                    mime == "text/plain" -> BookFormat.TXT
+                    else -> error("Unsupported document format")
                 }
             }
         }
@@ -167,10 +175,23 @@ class BookRepository(
         }
         val id = UUID.randomUUID().toString()
         val dest = File(booksDir, "$id.$ext")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Unable to read selected file")
-        importLocalFile(dest, preferredTitle = displayName.substringBeforeLast('.'), id = id)
+        try {
+            val coroutine = currentCoroutineContext()
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                atomicDownload(input, dest, -1L, checkActive = { coroutine.ensureActive() }) { read, _ ->
+                    require(read <= MAX_IMPORT_BYTES) { "Document is too large" }
+                }
+            } ?: error("Unable to read selected file")
+            importLocalFile(dest, preferredTitle = displayName.substringBeforeLast('.'), id = id)
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                if (bookDao.getBook(id) == null) {
+                    dest.delete()
+                    coverStore.delete(id)
+                }
+            }
+            throw failure
+        }
     }
 
     private suspend fun importLocalFile(
@@ -200,10 +221,14 @@ class BookRepository(
                     totalChapters = parsed.chapters.size.coerceAtLeast(1)
                 )
                 bookDao.upsert(book)
-                runCatching { cloudSync?.ensureRemoteBook(book) }
                 book
             }
             file.extension.equals("pdf", ignoreCase = true) -> {
+                android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                    android.graphics.pdf.PdfRenderer(descriptor).use { pdf ->
+                        require(pdf.pageCount > 0) { "Empty PDF document" }
+                    }
+                }
                 val title = preferredTitle?.takeIf { it.isNotBlank() }
                     ?: file.nameWithoutExtension
                 val author = "Unknown"
@@ -223,10 +248,11 @@ class BookRepository(
                     totalChapters = 1
                 )
                 bookDao.upsert(book)
-                runCatching { cloudSync?.ensureRemoteBook(book) }
                 book
             }
             else -> {
+                val content = TextBookLoader.load(file)
+                require(content.isNotBlank()) { "Empty text document" }
                 val title = preferredTitle?.takeIf { it.isNotBlank() }
                     ?: TextBookLoader.titleFromFile(file)
                 val author = "Unknown"
@@ -243,10 +269,9 @@ class BookRepository(
                     filePath = file.absolutePath,
                     coverPath = coverPath,
                     coverSource = coverSource,
-                    totalChapters = 1
+                    totalChapters = TextBookLoader.splitChapters(title, content).size
                 )
                 bookDao.upsert(book)
-                runCatching { cloudSync?.ensureRemoteBook(book) }
                 book
             }
         }
@@ -259,7 +284,7 @@ class BookRepository(
             coverPath = path,
             coverSource = CoverSource.USER
         )
-        bookDao.update(updated)
+        bookDao.updateCover(bookId, path, CoverSource.USER)
         // Keep remote URL if present; local USER cover wins for display.
         updated
     }
@@ -269,7 +294,7 @@ class BookRepository(
         val text = description?.takeIf { it.isNotBlank() } ?: return@withContext book
         if (book.description == text) return@withContext book
         val updated = book.copy(description = text)
-        bookDao.update(updated)
+        bookDao.updateDescription(bookId, text)
         updated
     }
 
@@ -303,16 +328,12 @@ class BookRepository(
         locatorJson: String? = null,
         totalChapters: Int? = null
     ) = withContext(Dispatchers.IO) {
-        val book = bookDao.getBook(bookId) ?: return@withContext
-        val updated = book.copy(
-            lastChapterIndex = chapterIndex,
-            lastOffset = offset,
-            progressPercent = progressPercent.coerceIn(0f, 100f),
-            progressUpdatedAt = System.currentTimeMillis(),
-            locatorJson = locatorJson ?: book.locatorJson,
-            totalChapters = totalChapters?.coerceAtLeast(1) ?: book.totalChapters
+        bookDao.updateProgress(
+            bookId, chapterIndex.coerceAtLeast(0), offset.coerceAtLeast(0),
+            progressPercent.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f,
+            System.currentTimeMillis(), locatorJson, totalChapters?.coerceAtLeast(1)
         )
-        bookDao.update(updated)
+        val updated = bookDao.getBook(bookId) ?: return@withContext
         runCatching { cloudSync?.pushProgress(updated) }
     }
 
@@ -322,7 +343,7 @@ class BookRepository(
         if (book.totalChapters > 1 || book.format == BookFormat.PDF) return@withContext
         val count = runCatching { loadChapterTexts(book).size }.getOrDefault(0)
         if (count <= 1) return@withContext
-        bookDao.update(book.copy(totalChapters = count))
+        bookDao.updateChapterCount(bookId, count)
     }
 
     suspend fun syncAfterImport(book: BookEntity) {
@@ -364,7 +385,12 @@ class BookRepository(
 
     suspend fun deleteBook(bookId: String) = withContext(Dispatchers.IO) {
         val book = bookDao.getBook(bookId) ?: return@withContext
+        if (bookId == "OL138052W") {
+            context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
+                .edit().putBoolean("sample_seeded", true).commit()
+        }
         bookDao.delete(bookId)
+        annotationDao?.deleteForBook(bookId)
         runCatching { File(book.filePath).delete() }
         coverStore.delete(bookId)
         book.coverPath?.let { runCatching { File(it).delete() } }
@@ -374,6 +400,7 @@ class BookRepository(
     }
 
     private fun queryDisplayName(uri: Uri): String? {
+        if (uri.scheme == "file") return uri.path?.let { File(it).name }
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (index >= 0 && cursor.moveToFirst()) {
@@ -381,5 +408,9 @@ class BookRepository(
             }
         }
         return uri.lastPathSegment
+    }
+
+    companion object {
+        private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
     }
 }
