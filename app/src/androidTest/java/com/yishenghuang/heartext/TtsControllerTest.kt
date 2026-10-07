@@ -9,6 +9,33 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class TtsControllerTest {
+    @Test fun onlyNaturalEndEmitsChapterCompletion() = runBlocking {
+        check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val system = FakeEngine()
+        val controller = TtsController(ApplicationProvider.getApplicationContext<Application>(), scope, system, FakeEngine())
+        val completed = AtomicInteger()
+        val collector = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            controller.completions.collect { completed.incrementAndGet() }
+        }
+        try {
+            withContext(Dispatchers.Main) { controller.play("Stopped."); controller.stop() }
+            delay(200)
+            assertEquals(0, completed.get())
+            val previousCalls = system.calls.get()
+            withContext(Dispatchers.Main) { controller.play("Completed.") }
+            withTimeout(5000) { while (system.calls.get() == previousCalls) delay(20) }
+            system.speaking = false
+            withTimeout(5000) { while (completed.get() == 0) delay(20) }
+            assertEquals(1, completed.get())
+            assertEquals(TtsPlaybackState.Idle, controller.state.value)
+        } finally {
+            withContext(Dispatchers.Main) { controller.shutdown() }
+            collector.cancel()
+            scope.cancel()
+        }
+    }
+
     @Test fun fallbackPauseResumeAndCancellationControlTheActualEngine() = runBlocking {
         check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
         val app = ApplicationProvider.getApplicationContext<Application>()

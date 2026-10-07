@@ -94,9 +94,11 @@ class PlaybackCoordinator(
                     _session.update { cur ->
                         if (!cur.active) cur else cur.copy(playbackState = state)
                     }
-                    if (state == TtsPlaybackState.Idle && _session.value.active) {
-                        maybeAdvanceChapter()
-                    }
+                }
+            }
+            launch {
+                tts.completions.collect { generation ->
+                    if (tts.isCurrentGeneration(generation)) maybeAdvanceChapter()
                 }
             }
             launch {
@@ -318,8 +320,12 @@ class PlaybackCoordinator(
         if (suppressAutoAdvance) return
         val s = _session.value
         if (!s.active) return
-        if (s.playbackState != TtsPlaybackState.Idle) return
-        if (s.chapterIndex >= chapters.lastIndex) return
+        if (tts.state.value != TtsPlaybackState.Idle) return
+        if (s.chapterIndex >= chapters.lastIndex) {
+            persistProgress(s.bookId, s.chapterIndex, completed = true)
+            focusHelper.abandonFocus()
+            return
+        }
         updateChapter(s.chapterIndex + 1, autoPlay = true)
     }
 
@@ -343,15 +349,8 @@ class PlaybackCoordinator(
     }
 
     private fun onDuck() {
-        val mode = _session.value.ttsMode
-        if (mode == TtsMode.SYSTEM) {
-            resumeAfterTransientLoss =
-                _session.value.playbackState == TtsPlaybackState.Speaking
-            pauseFromFocus()
-        } else {
-            ducked = true
-            tts.setVolume(0.2f)
-        }
+        resumeAfterTransientLoss = _session.value.playbackState == TtsPlaybackState.Speaking
+        pauseFromFocus()
     }
 
     /**
@@ -404,20 +403,18 @@ class PlaybackCoordinator(
         serviceStarted = false
     }
 
-    private fun persistProgress(bookId: String, chapterIndex: Int) {
+    private fun persistProgress(bookId: String, chapterIndex: Int, completed: Boolean = false) {
+        val total = chapters.size.coerceAtLeast(1)
         scope.launch {
             val book = bookRepository.getBook(bookId) ?: return@launch
-            val total = chapters.size.coerceAtLeast(1)
-            val percent = ((chapterIndex + 1f) / total * 100f).coerceIn(0f, 100f)
-            // Preserve page offset so listen does not reset reading position.
-            // Last chapter while listening counts as finished.
-            val resolvedPercent =
-                if (chapterIndex >= total - 1) 100f else percent
+            val sameChapter = book.lastChapterIndex == chapterIndex
+            val resolvedPercent = if (completed) 100f else if (sameChapter) book.progressPercent
+                else (chapterIndex.toFloat() / total * 100f).coerceIn(0f, 100f)
             runCatching {
                 bookRepository.updateProgress(
                     bookId = bookId,
                     chapterIndex = chapterIndex,
-                    offset = book.lastOffset,
+                    offset = if (sameChapter) book.lastOffset else 0,
                     progressPercent = resolvedPercent
                 )
             }

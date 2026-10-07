@@ -25,6 +25,7 @@ class AudioFocusHelper(
     private var hasFocus = false
 
     private val listener = AudioManager.OnAudioFocusChangeListener { change ->
+        hasFocus = change == AudioManager.AUDIOFOCUS_GAIN
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> onFocusChanged(FocusChange.Gained)
             AudioManager.AUDIOFOCUS_LOSS -> onFocusChanged(FocusChange.Lost)
@@ -42,9 +43,9 @@ class AudioFocusHelper(
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attrs)
-                .setOnAudioFocusChangeListener(listener)
-                .setAcceptsDelayedFocusGain(true)
-                .setWillPauseWhenDucked(false)
+                .setOnAudioFocusChangeListener(listener, android.os.Handler(android.os.Looper.getMainLooper()))
+                .setAcceptsDelayedFocusGain(false)
+                .setWillPauseWhenDucked(true)
                 .build()
             request = req
             audioManager.requestAudioFocus(req)
@@ -61,7 +62,6 @@ class AudioFocusHelper(
     }
 
     fun abandonFocus() {
-        if (!hasFocus) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             request?.let { audioManager.abandonAudioFocusRequest(it) }
         } else {

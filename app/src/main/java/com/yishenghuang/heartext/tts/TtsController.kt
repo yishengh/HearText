@@ -8,6 +8,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -34,6 +36,8 @@ class TtsController(
 ) {
     private val _state = MutableStateFlow(TtsPlaybackState.Idle)
     val state: StateFlow<TtsPlaybackState> = _state.asStateFlow()
+    private val _completions = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    internal val completions = _completions.asSharedFlow()
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -166,6 +170,7 @@ class TtsController(
                     _state.value != TtsPlaybackState.Paused
                 ) {
                     _state.value = TtsPlaybackState.Idle
+                    if (currentIndex >= sentences.size) _completions.emit(generation)
                 }
             } catch (e: CancellationException) {
                 // Expected on seek/stop — do not surface as error or start another engine.
@@ -182,7 +187,7 @@ class TtsController(
         }
     }
 
-    private fun isCurrentGeneration(generation: Int): Boolean =
+    internal fun isCurrentGeneration(generation: Int): Boolean =
         playGeneration.get() == generation
 
     /**
@@ -305,7 +310,15 @@ class TtsController(
     fun resume() {
         if (_state.value != TtsPlaybackState.Paused) return
         _state.value = TtsPlaybackState.Speaking
-        activeEngine.resume()
+        try {
+            activeEngine.resume()
+        } catch (failure: Exception) {
+            job?.cancel()
+            stopEnginesOnly()
+            _state.value = TtsPlaybackState.Error
+            _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_playback_failed)
+            return
+        }
         if (job?.isActive != true && sentences.isNotEmpty() && sourceText.isNotBlank()) {
             play(sourceText, currentIndex)
         }

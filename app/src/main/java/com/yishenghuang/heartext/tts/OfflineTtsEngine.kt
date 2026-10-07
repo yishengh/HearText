@@ -13,6 +13,13 @@ import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import com.yishenghuang.heartext.data.OfflineVoicePack
 import com.yishenghuang.heartext.data.OfflineVoiceRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -32,18 +39,39 @@ class OfflineTtsEngine(
     private val mutex = Mutex()
     private var tts: OfflineTts? = null
     private var loadedVoiceId: String? = null
-    private var track: AudioTrack? = null
+    @Volatile private var track: AudioTrack? = null
+    private val generation = AtomicLong()
+    @Volatile private var closed = false
 
     @Volatile private var speaking = false
     @Volatile private var paused = false
-    @Volatile private var stopRequested = false
     @Volatile private var volume: Float = 1f
     @Volatile private var speechRate: Float = 1f
 
     override suspend fun speak(text: String, voiceId: String?) {
+        check(!closed) { "Offline TTS is closed" }
+        val request = generation.incrementAndGet()
+        paused = false
+        speaking = true
+        try {
+            withContext(Dispatchers.Default) {
+                mutex.withLock {
+                    awaitPlayable(request)
+                    synthesizeAndPlay(text, voiceId, request)
+                }
+            }
+        } finally {
+            if (generation.get() == request) {
+                speaking = false
+                paused = false
+            }
+        }
+    }
+
+    private suspend fun synthesizeAndPlay(text: String, voiceId: String?, request: Long) {
         val id = voiceId?.trim().orEmpty()
         require(id.isNotBlank()) { "未选择离线音色" }
-        offlineVoices.ensureSharedEspeakNgData()
+        // Playback is offline: installation is responsible for shared voice assets.
         val pack = offlineVoices.resolvePack(id)
             ?: error("离线音色未安装，请先在「我的」下载")
         if (!OfflineVoicePack.hasSherpaOnnxMetadata(pack.modelOnnx)) {
@@ -59,37 +87,45 @@ class OfflineTtsEngine(
         val clipped = text.trim()
         require(clipped.isNotEmpty()) { "朗读文本为空" }
         require(clipped.length <= MAX_GENERATE_CHARS) { "Offline TTS chunk exceeds safe synthesis limit" }
-        stopRequested = false
-        paused = false
-        mutex.withLock {
-            ensureModelLocked(pack)
-            val engine = tts ?: error("离线 TTS 加载失败")
-            speaking = true
-            try {
-                val audio = withContext(Dispatchers.Default) {
-                    try {
-                        engine.generate(
-                            text = clipped,
-                            sid = 0,
-                            speed = speechRate.coerceIn(0.5f, 2.5f)
-                        )
-                    } catch (t: Throwable) {
-                        releaseModelLocked()
-                        throw IllegalStateException("离线合成失败: ${t.message}", t)
-                    }
+        awaitPlayable(request)
+        ensureModelLocked(pack)
+        val engine = tts ?: error("离线 TTS 加载失败")
+        try {
+            val audio = withContext(Dispatchers.Default) {
+                try {
+                    engine.generate(
+                        text = clipped,
+                        sid = 0,
+                        speed = speechRate.coerceIn(0.5f, 2.5f)
+                    )
+                } catch (t: Throwable) {
+                    releaseModelLocked()
+                    throw IllegalStateException("离线合成失败: ${t.message}", t)
                 }
-                if (stopRequested) return@withLock
-                val samples = audio.samples
-                val sampleRate = audio.sampleRate.takeIf { it > 0 } ?: pack.sampleRate
-                if (samples.isEmpty()) error("离线合成返回空音频")
-                playSamples(samples, sampleRate)
-            } catch (t: Throwable) {
-                if (stopRequested) return@withLock
-                throw t
-            } finally {
-                speaking = false
-                paused = false
             }
+            awaitPlayable(request)
+            val samples = audio.samples
+            val sampleRate = audio.sampleRate.takeIf { it > 0 } ?: pack.sampleRate
+            if (samples.isEmpty()) error("离线合成返回空音频")
+            playSamples(samples, sampleRate, request)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            ensureCurrent(request)
+            throw failure
+        }
+    }
+
+    private suspend fun ensureCurrent(request: Long) {
+        currentCoroutineContext().ensureActive()
+        if (generation.get() != request || closed) throw CancellationException("Playback replaced or stopped")
+    }
+
+    private suspend fun awaitPlayable(request: Long) {
+        ensureCurrent(request)
+        while (paused) {
+            delay(40)
+            ensureCurrent(request)
         }
     }
 
@@ -132,7 +168,7 @@ class OfflineTtsEngine(
         Log.i(TAG, "Loaded offline voice ${pack.voiceId}")
     }
 
-    private fun playSamples(samples: FloatArray, sourceRate: Int) {
+    private suspend fun playSamples(samples: FloatArray, sourceRate: Int, request: Long) {
         val rate = sourceRate.takeIf { it > 0 } ?: 22050
         val candidates = linkedSetOf(
             AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC),
@@ -152,7 +188,10 @@ class OfflineTtsEngine(
                 if (playRate != rate) {
                     Log.i(TAG, "Resampled offline audio $rate → $playRate Hz (pcm16)")
                 }
-                writeShorts(pcm16, toPcm16(pcm))
+                val shorts = toPcm16(pcm)
+                writeSamples(pcm16, shorts.size, request) { offset, count ->
+                    pcm16.write(shorts, offset, count, AudioTrack.WRITE_NON_BLOCKING)
+                }
                 return
             }
             val pcmFloat = createTrack(playRate, AudioFormat.ENCODING_PCM_FLOAT)
@@ -160,7 +199,9 @@ class OfflineTtsEngine(
                 if (playRate != rate) {
                     Log.i(TAG, "Resampled offline audio $rate → $playRate Hz (float)")
                 }
-                writeFloat(pcmFloat, pcm)
+                writeSamples(pcmFloat, pcm.size, request) { offset, count ->
+                    pcmFloat.write(pcm, offset, count, AudioTrack.WRITE_NON_BLOCKING)
+                }
                 return
             }
             lastError = "rate=$playRate"
@@ -221,69 +262,41 @@ class OfflineTtsEngine(
         }.getOrNull()
     }
 
-    private fun writeFloat(audioTrack: AudioTrack, samples: FloatArray) {
-        track = audioTrack
-        audioTrack.setVolume(volume)
-        audioTrack.play()
+    private suspend fun writeSamples(
+        audioTrack: AudioTrack,
+        sampleCount: Int,
+        request: Long,
+        write: (Int, Int) -> Int
+    ) {
         try {
-            var offset = 0
-            while (offset < samples.size && !stopRequested) {
-                while (paused && !stopRequested) {
-                    Thread.sleep(40)
-                }
-                if (stopRequested) break
-                val chunk = minOf(2048, samples.size - offset)
-                val written = audioTrack.write(samples, offset, chunk, AudioTrack.WRITE_BLOCKING)
-                if (written < 0) break
-                offset += chunk
-            }
-        } catch (t: Throwable) {
-            if (!stopRequested) throw t
+            awaitPlayable(request)
+            track = audioTrack
+            audioTrack.setVolume(volume)
+            awaitPlayable(request)
+            audioTrack.play()
+            streamPcm(
+                sampleCount,
+                awaitPlayable = { awaitPlayable(request) },
+                write = write,
+                playedFrames = { audioTrack.playbackHeadPosition.toLong() and 0xffffffffL }
+            )
         } finally {
             releaseTrack(audioTrack)
         }
     }
-
-    private fun writeShorts(audioTrack: AudioTrack, samples: ShortArray) {
-        track = audioTrack
-        audioTrack.setVolume(volume)
-        audioTrack.play()
-        try {
-            var offset = 0
-            while (offset < samples.size && !stopRequested) {
-                while (paused && !stopRequested) {
-                    Thread.sleep(40)
-                }
-                if (stopRequested) break
-                val chunk = minOf(2048, samples.size - offset)
-                val written = audioTrack.write(samples, offset, chunk, AudioTrack.WRITE_BLOCKING)
-                if (written < 0) break
-                offset += chunk
-            }
-        } catch (t: Throwable) {
-            if (!stopRequested) throw t
-        } finally {
-            releaseTrack(audioTrack)
-        }
-    }
-
     private fun releaseTrack(audioTrack: AudioTrack) {
-        runCatching {
-            audioTrack.stop()
-            audioTrack.release()
-        }
+        runCatching { audioTrack.stop() }
+        runCatching { audioTrack.release() }
         if (track === audioTrack) track = null
     }
 
     override fun stop() {
-        stopRequested = true
+        generation.incrementAndGet()
         paused = false
         speaking = false
         runCatching { track?.pause() }
         runCatching { track?.flush() }
-        runCatching { track?.stop() }
-        runCatching { track?.release() }
-        track = null
+        // The writing coroutine owns release, avoiding a use-after-release race.
     }
 
     override fun pause() {
@@ -314,8 +327,12 @@ class OfflineTtsEngine(
     override fun isSpeaking(): Boolean = speaking && !paused
 
     override fun shutdown() {
+        closed = true
         stop()
-        releaseModelLocked()
+        // Native synthesis cannot be interrupted safely. Release only after it exits.
+        CoroutineScope(Dispatchers.Default).launch {
+            mutex.withLock { releaseModelLocked() }
+        }
     }
 
     private fun releaseModelLocked() {
