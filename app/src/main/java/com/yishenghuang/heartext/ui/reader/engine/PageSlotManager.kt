@@ -41,8 +41,15 @@ class PageSlotManager(
     private val requestTokens = LongArray(3)
     private var chapterCount: Int = 0
 
-    /** 字号变化时暂存当前页的字符起始偏移，供 loadSlot 搜索修正后的页码 */
-    var pendingStartCharOffset: Int = -1
+    private var pendingCharacter: Pair<Int, Int>? = null
+
+    fun setPendingCharacter(chapterIndex: Int, offset: Int) {
+        pendingCharacter = chapterIndex to offset.coerceAtLeast(0)
+    }
+
+    fun clearPendingCharacter() {
+        pendingCharacter = null
+    }
 
     /** 文本内容提供者：根据章节索引返回文本 */
     var contentProvider: (suspend (Int) -> CharSequence?)? = null
@@ -120,18 +127,17 @@ class PageSlotManager(
 
                 var actualPage = pageInChapter
 
-                // 字号变化后，根据字符偏移修正页码（保持阅读内容位置不变）
-                if (slotIdx == SLOT_CUR && pendingStartCharOffset >= 0) {
+                val anchor = pendingCharacter
+                if (slotIdx == SLOT_CUR && anchor?.first == chapterIndex) {
+                    val offset = anchor.second.coerceAtMost((text.length - 1).coerceAtLeast(0))
                     val correctedPage = chapterLayout.pages.indexOfFirst { page ->
-                        pendingStartCharOffset >= page.startCharOffset &&
-                                pendingStartCharOffset < page.endCharOffset
+                        offset >= page.startCharOffset && offset < page.endCharOffset
                     }
                     if (correctedPage >= 0) {
                         actualPage = correctedPage
                         slot.pageIndex = correctedPage
-                        Log.d(TAG, "Font-size correction: charOffset=$pendingStartCharOffset -> page $correctedPage")
                     }
-                    pendingStartCharOffset = -1  // 消费一次
+                    pendingCharacter = null
                 }
                 if (slotIdx == SLOT_PREV && actualPage == 0 && chapterIndex < currentChapterIndex) {
                     actualPage = chapterLayout.totalPages - 1

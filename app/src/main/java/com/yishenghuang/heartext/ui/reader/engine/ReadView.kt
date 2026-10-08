@@ -495,12 +495,13 @@ class ReadView(context: Context) : FrameLayout(context) {
         layoutEngine.sharedTextPaint = curPageView.textView.paint
 
         if (needsRelayout) {
-            // 字号变化前捕获当前内容位置，以便重新分页后修正页码
-            if (fontSizeChanged) {
-                val curSlot = slotManager.getCurSlot()
-                if (curSlot.isLoaded) {
-                    slotManager.pendingStartCharOffset = curSlot.contentView.chapterStartOffset
-                }
+            // Every layout change can move page boundaries. Preserve the visible text,
+            // but never carry an anchor across an explicit chapter/page navigation.
+            val curSlot = slotManager.getCurSlot()
+            if (curSlot.isLoaded && curSlot.chapterIndex == startChapter &&
+                curSlot.pageIndex == startPage
+            ) {
+                slotManager.setPendingCharacter(startChapter, curSlot.contentView.chapterStartOffset)
             }
             layoutEngine.invalidateAll()
         }
@@ -519,10 +520,14 @@ class ReadView(context: Context) : FrameLayout(context) {
      */
     fun forceRelayout() {
         if (!isConfigured) return
-        layoutEngine.invalidateAll()
         val curSlot = slotManager.getCurSlot()
         if (curSlot.chapterIndex >= 0) {
-            slotManager.loadSlot(PageSlotManager.SLOT_CUR, curSlot.chapterIndex, curSlot.pageIndex)
+            if (curSlot.isLoaded) {
+                slotManager.setPendingCharacter(curSlot.chapterIndex, curSlot.contentView.chapterStartOffset)
+            }
+            layoutEngine.invalidateAll()
+            // initialize also invalidates loaded slots; loadSlot alone would return early.
+            slotManager.initialize(curSlot.chapterIndex, curSlot.pageIndex)
         }
     }
 
@@ -530,6 +535,7 @@ class ReadView(context: Context) : FrameLayout(context) {
     fun jumpToChapter(chapterIndex: Int, pageInChapter: Int = 0) {
         beginJumpSettling(chapterIndex)
         animationController.abortAnim()
+        slotManager.clearPendingCharacter()
         layoutEngine.invalidateChapter(chapterIndex)
         slotManager.jumpTo(chapterIndex, pageInChapter)
     }
@@ -538,6 +544,7 @@ class ReadView(context: Context) : FrameLayout(context) {
     fun jumpToCharacter(chapterIndex: Int, characterOffset: Int) {
         beginJumpSettling(chapterIndex)
         animationController.abortAnim()
+        slotManager.clearPendingCharacter()
         val targetOffset = characterOffset.coerceAtLeast(0)
         val cachedLayout = layoutEngine.getChapterLayout(chapterIndex)
         val cachedPage = cachedLayout?.pages?.indexOfFirst { page ->
@@ -547,7 +554,7 @@ class ReadView(context: Context) : FrameLayout(context) {
         if (cachedPage >= 0) {
             slotManager.jumpTo(chapterIndex, cachedPage)
         } else {
-            slotManager.pendingStartCharOffset = targetOffset
+            slotManager.setPendingCharacter(chapterIndex, targetOffset)
             layoutEngine.invalidateChapter(chapterIndex)
             slotManager.jumpTo(chapterIndex, 0)
         }
@@ -568,6 +575,14 @@ class ReadView(context: Context) : FrameLayout(context) {
     fun getCurrentPageStartCharacterOffset(): Int? {
         val current = slotManager.getCurSlot()
         return current.contentView.chapterStartOffset.takeIf { current.isLoaded && it >= 0 }
+    }
+
+    fun getCurrentPageCharacterRange(): IntRange? {
+        val current = slotManager.getCurSlot()
+        if (!current.isLoaded) return null
+        val page = layoutEngine.getChapterLayout(current.chapterIndex)?.pages?.getOrNull(current.pageIndex)
+            ?: return null
+        return page.startCharOffset until page.endCharOffset
     }
 
     fun getCurrentPageBookmarkTitle(): String? {
@@ -1002,8 +1017,8 @@ class ReadView(context: Context) : FrameLayout(context) {
                 fontSizePx = currentFontSizePx,
                 theme = currentTheme,
                 chapterCount = currentChapterCount,
-                startChapter = pendingStartChapter,
-                startPage = pendingStartPage,
+                startChapter = if (isConfigured) slotManager.getCurSlot().chapterIndex else pendingStartChapter,
+                startPage = if (isConfigured) slotManager.getCurSlot().pageIndex else pendingStartPage,
                 lineHeightMult = currentLineHeightMult,
                 letterSpacingDp = currentLetterSpacingDp,
                 fontType = currentFontType,
