@@ -328,4 +328,7 @@
     <string name="error_overview_load">No se pudo cargar este libro.</string>
     <string name="error_library_load">No se pudo cargar la biblioteca. Inténtalo de nuevo.</string>
     <string name="error_bookmark_save">No se pudo guardar el cambio del marcador. Inténtalo de nuevo.</string>
+    <string name="reader_open_menu">Abrir el menú de lectura</string>
+    <string name="reader_previous_page">Página anterior</string>
+    <string name="reader_next_page">Página siguiente</string>
 </resources>

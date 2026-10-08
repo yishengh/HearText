@@ -370,3 +370,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试让书签查询抛出包含私有信息的异常，验证本地化错误和无残留；恢复后连续 20 次点击只生成一条，下一次点击可正常移除。另用无效二进制 TXT 验证阅读错误不含文件路径、未就绪时不保存书签。
 - 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m11s）：Debug、Lint、54 项 JVM、55 项设备测试，0 failures / 0 skipped。日志：build/local-validation/reader-bookmark-verification.log。原有实际阅读、书签跳转及重建测试同时通过。
 - 仍需检查正文辅助功能、其他既定错误/多语言路径和存储清理边界；真实账号及物理音频设备限制保持如前。未发布、推送或生产写入。
+
+### 第三十五轮：正文辅助功能动作
+
+- 原生文字 TextView 保留文字及系统选择能力，增加打开阅读菜单、向前/向后翻页的辅助功能动作；动作复用现有翻页边界和动画状态检查。首末页不提供越界方向，翻页后发送滚动事件。
+- 预加载的前后页以 NO_HIDE_DESCENDANTS 排除出辅助功能树，只让当前页参与正文导航；父阅读容器不额外作为重复节点。中心点击经 performClick 统一处理，菜单回调不再只依赖触摸动画回调。
+- 依据 [Android 自定义 View 无障碍指引](https://developer.android.com/guide/topics/ui/accessibility/views/custom-views) 及 [AccessibilityAction 参考](https://developer.android.com/reference/android/view/accessibility/AccessibilityNodeInfo.AccessibilityAction)。动作标签提供英、中、法、西四语言。
+- 新设备测试创建实际 ReadView，检查当前页节点文字、动作及其他页排除标记；执行辅助功能点击打开菜单、前后翻页，再跳到末页确认无前进动作且请求返回 false。原有阅读触摸、排版和书签回归继续通过。
+- 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m12s）：Debug、Lint、54 项 JVM、56 项设备测试，0 failures / 0 skipped。日志：build/local-validation/reader-accessibility-verification.log。
+- 本轮是实际 View 辅助功能接口验证，没有开启 TalkBack 做人工语音与手势验收，不据此认定所有屏幕或第三方 PDF 控件的无障碍体验已覆盖。既定存储清理、多语言及生命周期最终审查继续推进，未发布、推送或生产写入。

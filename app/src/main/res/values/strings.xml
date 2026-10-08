@@ -328,4 +328,7 @@
     <string name="error_overview_load">Could not load this book.</string>
     <string name="error_library_load">Could not load the library. Please try again.</string>
     <string name="error_bookmark_save">Could not save the bookmark change. Please try again.</string>
+    <string name="reader_open_menu">Open reading menu</string>
+    <string name="reader_previous_page">Previous page</string>
+    <string name="reader_next_page">Next page</string>
 </resources>

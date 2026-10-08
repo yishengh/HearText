@@ -328,4 +328,7 @@
     <string name="error_overview_load">Impossible de charger ce livre.</string>
     <string name="error_library_load">Impossible de charger la bibliothèque. Veuillez réessayer.</string>
     <string name="error_bookmark_save">Impossible de sauvegarder la modification du signet. Veuillez réessayer.</string>
+    <string name="reader_open_menu">Ouvrir le menu de lecture</string>
+    <string name="reader_previous_page">Page précédente</string>
+    <string name="reader_next_page">Page suivante</string>
 </resources>

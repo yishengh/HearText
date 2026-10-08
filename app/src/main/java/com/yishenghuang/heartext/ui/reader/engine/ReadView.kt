@@ -8,6 +8,10 @@ import android.text.Spannable
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityEvent
+import com.yishenghuang.heartext.R
 import android.widget.FrameLayout
 import com.yishenghuang.heartext.ui.reader.model.Note
 import com.yishenghuang.heartext.ui.reader.model.ReaderEdgeTapAction
@@ -178,6 +182,7 @@ class ReadView(context: Context) : FrameLayout(context) {
     init {
         isClickable = true
         isFocusable = true
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         // 🔥 禁用裁剪：翻页动画需要子 View 在屏幕外绘制（左右滑动时上/下一页在屏幕外）
         clipChildren = false
         clipToPadding = false
@@ -223,10 +228,7 @@ class ReadView(context: Context) : FrameLayout(context) {
         animationController.onTapLeft = {
             performEdgeTap(currentEdgeTapMode.leftAction)
         }
-        animationController.onTapCenter = {
-            clearCurrentSelection()
-            callbacks?.onMenuToggle()
-        }
+        animationController.onTapCenter = { performClick() }
         animationController.onTapRight = {
             performEdgeTap(currentEdgeTapMode.rightAction)
         }
@@ -244,6 +246,34 @@ class ReadView(context: Context) : FrameLayout(context) {
         for (pageView in listOf(prevPageView, curPageView, nextPageView)) {
             setupSelectionWatcher(pageView)
             pageView.suppressSystemToolbar()
+            pageView.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            pageView.textView.accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    if (host !== slotManager.getCurSlot().contentView.textView) return
+                    val current = slotManager.getCurSlot()
+                    val previous = current.isLoaded && (current.chapterIndex > 0 || current.pageIndex > 0)
+                    val next = getNextPageLocation().first >= 0
+                    info.isScrollable = previous || next
+                    info.isClickable = true
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_CLICK, context.getString(R.string.reader_open_menu)))
+                    if (previous) info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, context.getString(R.string.reader_previous_page)))
+                    if (next) info.addAction(AccessibilityNodeInfo.AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, context.getString(R.string.reader_next_page)))
+                }
+
+                override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+                    if (host !== slotManager.getCurSlot().contentView.textView) return false
+                    return when (action) {
+                        AccessibilityNodeInfo.ACTION_CLICK -> this@ReadView.performClick()
+                        AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> turnToNextPage()
+                        AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> turnToPreviousPage()
+                        else -> super.performAccessibilityAction(host, action, args)
+                    }
+                }
+            }
         }
 
         // 翻页后刷新高亮
@@ -259,6 +289,12 @@ class ReadView(context: Context) : FrameLayout(context) {
                 }, JUMP_SETTLE_DELAY_MS)
             }
             configureCurrentPageView()
+            val currentView = slotManager.getCurSlot().contentView
+            for (page in listOf(prevPageView, curPageView, nextPageView)) {
+                page.importantForAccessibility = if (page === currentView)
+                    IMPORTANT_FOR_ACCESSIBILITY_AUTO else IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            }
+            currentView.textView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED)
             invalidate()
         }
 
@@ -881,6 +917,13 @@ class ReadView(context: Context) : FrameLayout(context) {
             }
         }
         super.requestDisallowInterceptTouchEvent(disallowIntercept)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        clearCurrentSelection()
+        callbacks?.onMenuToggle()
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

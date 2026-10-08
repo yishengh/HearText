@@ -328,4 +328,7 @@
     <string name="error_overview_load">无法加载此书籍。</string>
     <string name="error_library_load">无法加载书库，请重试。</string>
     <string name="error_bookmark_save">无法保存书签更改，请重试。</string>
+    <string name="reader_open_menu">打开阅读菜单</string>
+    <string name="reader_previous_page">上一页</string>
+    <string name="reader_next_page">下一页</string>
 </resources>
