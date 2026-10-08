@@ -29,6 +29,36 @@ class HearTextApiTest {
     private val tokens = Tokens()
     private fun api() = HearTextApi(tokens, OkHttpClient(), server.url("/").toString())
 
+    @Test fun unavailableWithZeroDelayDoesNotReplayWriteInsideOkHttp() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(503).addHeader("Retry-After", "0"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val failure = runCatching { api().updateMe(displayName = "Local test") }.exceptionOrNull()
+        assertTrue(failure is ApiHttpException)
+        assertEquals(503, (failure as ApiHttpException).code)
+        assertEquals(0L, failure.retryAfterMillis)
+        assertEquals(1, server.requestCount)
+        assertEquals("PATCH", server.takeRequest().method)
+        assertFalse(tokens.refreshes.contains(true))
+    }
+
+    @Test fun timeoutResponseDoesNotReplayWriteInsideOkHttp() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(408))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val failure = runCatching { api().updateMe(displayName = "Local test") }.exceptionOrNull()
+        assertEquals(408, (failure as ApiHttpException).code)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun overflowingRetryAfterDoesNotCrashOkHttpOrReplayDownload() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(503).addHeader("Retry-After", "99999999999999999999"))
+        val file = folder.newFile("existing.zip").apply { writeText("keep") }
+        val failure = runCatching { api().downloadOfflineVoice("voice", file) }.exceptionOrNull()
+        assertEquals(503, (failure as ApiHttpException).code)
+        assertTrue(failure.retryAfterMillis!! > 0)
+        assertEquals("keep", file.readText())
+        assertEquals(1, server.requestCount)
+    }
+
     @Test fun rateLimitBlocksRepeatedDownloadsWithoutRefreshingOrChangingFiles() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(429).addHeader("Retry-After", "60"))
         val api = api()

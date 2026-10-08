@@ -235,3 +235,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新增 3 项 JVM 测试覆盖时间格式/溢出/无效值、系统时钟变化与较短冷却，以及本地 429 后连续下载只发出一次请求、不刷新认证、不改变旧文件。已有取消与账号切换测试继续通过。
 - `tools/verify-local.ps1` 通过（1m9s）：Debug、Lint、49 项 JVM 测试。该轮未重跑设备测试；上一轮 37 项设备结果不能当作本次请求层修改后的设备验证。日志：build/local-validation/retry-after-verification.log。
 - 后续仍需完成既定同步删除、阅读定位及体验清单，并检查底层 HTTP 自动重试语义与完整设备回归。没有生产写入或发布。
+
+
+### 第二十轮：阻止底层 HTTP 自动重发写请求
+
+- 核对 [OkHttp 5.3.2 官方实现](https://raw.githubusercontent.com/square/okhttp/parent-5.3.2/okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/RetryAndFollowUpInterceptor.kt)：503 携带 Retry-After: 0 会自动重发，且这一分支不检查 retryOnConnectionFailure；超大数字还可能在其整数转换处抛异常。
+- 将 429/503 处理移至 network interceptor，在 OkHttp 自动 follow-up 前关闭响应并返回安全异常，同时关闭连接失败/408 自动恢复。应用显式的一次 401 刷新保留，正常下载重定向保留。网络失败直接交给现有本地保留与用户重试流程，不隐式重放可能已经提交的写操作。
+- 新增本地 MockWebServer 测试：503/0 和 408 的 PATCH 都只收到一次请求，超大 Retry-After 仍返回受控异常且保留旧下载。原有 401、取消、换号与限流回归通过。
+- 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m5s）：Debug、Lint、52 项 JVM、37 项设备测试，0 failures / 0 skipped。真实系统/离线语音、阅读重建及同步回归均包含在本轮设备运行中。日志：build/local-validation/http-replay-verification.log。
+- 此次结果关闭底层 HTTP 自动重试检查项，不代表既定书籍删除重试、持久字符位置和全局体验审查已完成。未发布、推送或访问生产写接口。

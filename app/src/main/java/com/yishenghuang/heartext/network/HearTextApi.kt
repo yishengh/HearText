@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 
 class HearTextApi(
     private val tokenProvider: SessionTokenProvider,
-    private val client: OkHttpClient = OkHttpClient.Builder()
+    client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
@@ -26,17 +26,25 @@ class HearTextApi(
     endpoint: String = BuildConfig.API_BASE_URL
 ) {
     private val retryAfterGate = RetryAfterGate()
+    // Observe overload responses before OkHttp can replay a request (including POST on 503/0).
+    private val client = client.newBuilder()
+        .retryOnConnectionFailure(false)
+        .addNetworkInterceptor { chain ->
+            retryAfterGate.check()
+            val response = chain.proceed(chain.request())
+            if (response.code == 429 || response.code == 503) {
+                val delay = retryAfterGate.record(response.code, response.header("Retry-After"))
+                response.close()
+                throw ApiHttpException(response.code, "", delay)
+            }
+            response
+        }
+        .build()
 
     private suspend fun <T> okhttp3.Call.consumeApiResponse(consume: (okhttp3.Response) -> T): T {
         currentCoroutineContext().ensureActive()
         retryAfterGate.check()
-        return consumeCancellable { response ->
-            val retryAfter = retryAfterGate.record(response.code, response.header("Retry-After"))
-            if (response.code == 429 || response.code == 503) {
-                throw ApiHttpException(response.code, "", retryAfter)
-            }
-            consume(response)
-        }
+        return consumeCancellable(consume)
     }
 
     private val baseUrl: String = endpoint.trimEnd('/')
