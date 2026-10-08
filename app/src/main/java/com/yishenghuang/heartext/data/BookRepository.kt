@@ -406,20 +406,28 @@ class BookRepository(
         }
     }
 
-    suspend fun deleteBook(bookId: String) = withContext(Dispatchers.IO) {
-        BookMutations.mutex.withLock {
+    /** Local removal is durable even when remote deletion must wait for a later sync. */
+    suspend fun deleteBook(bookId: String): BookDeletionResult = withContext(Dispatchers.IO) {
+        val removed = BookMutations.mutex.withLock {
             withContext(NonCancellable) {
-                val book = bookDao.removeAndQueueDeletion(bookId) ?: return@withContext
-                if (bookId == "OL138052W") {
-                    context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
-                        .edit().putBoolean("sample_seeded", true).commit()
+                val book = bookDao.removeAndQueueDeletion(bookId)
+                if (book != null) {
+                    if (bookId == "OL138052W") {
+                        context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
+                            .edit().putBoolean("sample_seeded", true).commit()
+                    }
+                    runCatching { File(book.filePath).delete() }
+                    coverStore.delete(bookId)
+                    book.coverPath?.let { runCatching { File(it).delete() } }
                 }
-                runCatching { File(book.filePath).delete() }
-                coverStore.delete(bookId)
-                book.coverPath?.let { runCatching { File(it).delete() } }
+                book
             }
         }
         cloudSync?.flushPendingDeletions()
+        val pending = removed?.remoteOwnerId?.let { owner ->
+            bookDao.pendingDeletions(owner).any { it.localId == bookId }
+        } == true
+        if (pending) BookDeletionResult.REMOTE_PENDING else BookDeletionResult.DELETED
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -437,3 +445,5 @@ class BookRepository(
         private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
     }
 }
+
+enum class BookDeletionResult { DELETED, REMOTE_PENDING }

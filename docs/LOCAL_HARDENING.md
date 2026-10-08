@@ -353,3 +353,11 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 首轮编译暴露编辑范围错误（相邻缓存声明及其他设置页参数），已修复；失败日志 sync-status-verification.log 不计作通过。最终完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m12s）：Debug、Lint、54 项 JVM、52 项设备测试，0 failures / 0 skipped。日志：build/local-validation/sync-status-final.log。
 - 随后仅加强仓库集成测试：删除 503 后仍 GET 书籍/进度且报告未完成，下一次 DELETE 成功后同步成功。CloudSyncTest 10 项设备专项全部通过（22s），日志 sync-aggregate-integration.log；生产代码未再变化。专项运行后的 connected 报告只包含该专项，完整回归证据见前述日志。
 - 独立删除操作的即时提示、其他既定错误/空状态、多语言和无障碍审查继续推进。无真实后端写入、发布、推送或后端修改。
+
+### 第三十三轮：删除反馈与详情空状态
+
+- 删除仓库返回本地已删除或云端待完成结果，书库对后者显示四语言提示并引导到设置中的云同步重试；不会把已经完成的本地删除描述为全部失败。普通删除异常改为资源文案，取消继续传播，不输出底层异常正文。
+- 书籍详情区分加载、存在、缺失和读取失败。缺失记录不再永久转圈；读取失败提供重试，返回按钮始终可用。观察数据变化后能从缺失进入详情，或从详情回到缺失。可选章节数/简介补全失败不再从未处理协程抛出并阻止本地页面。
+- 新实际 Compose 详情页设备测试模拟观察失败，点击重试后确认缺失提示，再插入及删除书籍确认界面更新并点击返回。云删除竞争测试新增断言 REMOTE_PENDING 结果，既有持久待办验证保留。
+- 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m21s）：Debug、Lint、54 项 JVM、53 项设备测试，0 failures / 0 skipped。日志：build/local-validation/overview-delete-verification.log。
+- 本轮不等同于真实账号删除操作的人工 UI 验证；所有网络测试仍是本地模拟。阅读器错误正文、书签失败处理及其余既定体验审查继续推进，未发布、推送或执行生产写入。

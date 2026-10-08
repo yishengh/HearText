@@ -324,4 +324,6 @@
     <string name="sync_incomplete">部分更改仍待同步。本地书籍仍可使用。</string>
     <string name="sync_offline">离线模式下云同步已关闭。</string>
     <string name="sync_now">立即同步</string>
+    <string name="delete_remote_pending">已从此设备移除。云端删除仍待完成，请在设置中重试云同步。</string>
+    <string name="error_overview_load">无法加载此书籍。</string>
 </resources>

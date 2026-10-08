@@ -324,4 +324,6 @@
     <string name="sync_incomplete">Some changes are still waiting to sync. Local books remain available.</string>
     <string name="sync_offline">Cloud sync is off in offline mode.</string>
     <string name="sync_now">Sync now</string>
+    <string name="delete_remote_pending">Removed from this device. Cloud deletion is pending; retry cloud sync in Settings.</string>
+    <string name="error_overview_load">Could not load this book.</string>
 </resources>

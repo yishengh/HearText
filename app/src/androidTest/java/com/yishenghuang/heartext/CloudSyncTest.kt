@@ -86,7 +86,7 @@ class CloudSyncTest {
         val repo = BookRepository(context, db.bookDao(), CoverStore(context), sync, db.annotationDao())
         val deletion = async { repo.deleteBook(book.id) }
         registration.await()
-        deletion.await()
+        assertEquals(BookDeletionResult.REMOTE_PENDING, deletion.await())
         assertNull(db.bookDao().getBook(book.id))
         assertEquals("remote", db.bookDao().pendingDeletions("account-a").single().remoteId)
         server.enqueue(MockResponse().setResponseCode(204))

@@ -324,4 +324,6 @@
     <string name="sync_incomplete">Algunos cambios siguen pendientes. Los libros locales siguen disponibles.</string>
     <string name="sync_offline">La sincronización está desactivada en el modo sin conexión.</string>
     <string name="sync_now">Sincronizar ahora</string>
+    <string name="delete_remote_pending">Eliminado de este dispositivo. La eliminación en la nube está pendiente; reintenta la sincronización en Ajustes.</string>
+    <string name="error_overview_load">No se pudo cargar este libro.</string>
 </resources>

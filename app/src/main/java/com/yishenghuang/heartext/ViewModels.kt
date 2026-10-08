@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -64,10 +67,11 @@ class LibraryViewModel(
 
     fun deleteBook(bookId: String) {
         viewModelScope.launch {
-            runCatching { bookRepository.deleteBook(bookId) }
-                .onFailure {
-                    _error.value = it.message ?: app.getString(R.string.error_delete_failed)
-                }
+            try {
+                if (bookRepository.deleteBook(bookId) == com.yishenghuang.heartext.data.BookDeletionResult.REMOTE_PENDING)
+                    _error.value = app.getString(R.string.delete_remote_pending)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { _error.value = app.getString(R.string.error_delete_failed) }
         }
     }
 
@@ -101,25 +105,43 @@ class HomeViewModel(
     }
 }
 
+sealed interface BookOverviewState {
+    data object Loading : BookOverviewState
+    data object Missing : BookOverviewState
+    data object Failed : BookOverviewState
+    data class Ready(val book: BookEntity) : BookOverviewState
+}
+
 class BookOverviewViewModel(
     private val bookId: String,
     private val bookRepository: BookRepository,
     private val catalogRepository: CatalogRepository? = null
 ) : ViewModel() {
-    val book = bookRepository.observeBook(bookId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    private val reload = MutableStateFlow(0)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val state = reload.flatMapLatest {
+        bookRepository.observeBook(bookId)
+            .map<BookEntity?, BookOverviewState> { book ->
+                book?.let { BookOverviewState.Ready(it) } ?: BookOverviewState.Missing
+            }
+            .onStart { emit(BookOverviewState.Loading) }
+            .catch { emit(BookOverviewState.Failed) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookOverviewState.Loading)
+
+    fun retry() { reload.value++ }
 
     init {
         viewModelScope.launch {
-            bookRepository.ensureChapterCount(bookId)
-            val current = bookRepository.getBook(bookId) ?: return@launch
-            if (!current.description.isNullOrBlank()) return@launch
-            val catalogId = current.catalogBookId?.takeIf { it.isNotBlank() } ?: return@launch
-            val repo = catalogRepository ?: return@launch
-            runCatching {
+            try {
+                bookRepository.ensureChapterCount(bookId)
+                val current = bookRepository.getBook(bookId) ?: return@launch
+                if (!current.description.isNullOrBlank()) return@launch
+                val catalogId = current.catalogBookId?.takeIf { it.isNotBlank() } ?: return@launch
+                val repo = catalogRepository ?: return@launch
                 val detail = repo.detail(catalogId)
                 bookRepository.updateDescription(bookId, detail.description)
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Optional metadata must not prevent opening the local overview. */ }
         }
     }
 

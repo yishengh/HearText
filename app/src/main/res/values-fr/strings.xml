@@ -324,4 +324,6 @@
     <string name="sync_incomplete">Certaines modifications restent à synchroniser. Les livres locaux restent disponibles.</string>
     <string name="sync_offline">La synchronisation cloud est désactivée en mode hors ligne.</string>
     <string name="sync_now">Synchroniser</string>
+    <string name="delete_remote_pending">Supprimé de cet appareil. La suppression cloud reste en attente ; relancez la synchronisation dans les paramètres.</string>
+    <string name="error_overview_load">Impossible de charger ce livre.</string>
 </resources>

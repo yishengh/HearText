@@ -58,7 +58,8 @@ fun BookOverviewScreen(
     onBack: () -> Unit,
     onKeepReading: (bookId: String, title: String, coverPath: String?) -> Unit
 ) {
-    val book by viewModel.book.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val book = (state as? com.yishenghuang.heartext.BookOverviewState.Ready)?.book
     val coverSaving by viewModel.coverSaving.collectAsStateWithLifecycle()
     val coverError by viewModel.coverError.collectAsStateWithLifecycle()
     val coverPicker = rememberLauncherForActivityResult(
@@ -100,7 +101,14 @@ fun BookOverviewScreen(
             val b = book
             if (b == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = HearPurple)
+                    when (state) {
+                        com.yishenghuang.heartext.BookOverviewState.Loading -> CircularProgressIndicator(color = HearPurple)
+                        com.yishenghuang.heartext.BookOverviewState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(stringResource(R.string.error_overview_load))
+                            androidx.compose.material3.TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.action_retry)) }
+                        }
+                        else -> Text(stringResource(R.string.error_book_not_found))
+                    }
                 }
             } else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding()) {
