@@ -33,6 +33,46 @@ class CloudSyncTest {
     }
     @After fun tearDown() { db.close() }
 
+    @Test fun concurrentProgressPushesSendLatestLocatorOnceAndPullRestoresIt() = runBlocking {
+        val local = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a",
+            lastChapterIndex = 2, lastOffset = 4, progressPercent = 40f, progressUpdatedAt = 5000,
+            locatorJson = TextPosition(2, 1200).encode())
+        db.bookDao().upsert(local)
+        val posted = java.util.concurrent.atomic.AtomicReference<org.json.JSONObject>()
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                if (request.method == "PUT") {
+                    val payload = org.json.JSONObject(request.body.readUtf8()).put("book_id", "remote")
+                    posted.set(payload)
+                    return MockResponse().setBody(payload.toString())
+                }
+                return if (request.path == "/v1/books") MockResponse().setBody("[$remote]")
+                else MockResponse().setBody("[${posted.get()}]")
+            }
+        }
+        (1..12).map { async { sync.pushProgress(local.copy(lastOffset = 0, locatorJson = null)) } }.awaitAll()
+        assertEquals(1, server.requestCount)
+        assertEquals(4, posted.get().getInt("position"))
+        assertEquals(1200, posted.get().getJSONObject("extras").getJSONObject("heartext_locator").getInt("character"))
+        db.bookDao().upsert(local.copy(progressUpdatedAt = 1, lastOffset = 0, locatorJson = null))
+        sync.pullAndMergeProgress()
+        val restored = db.bookDao().getBook(local.id)!!
+        assertEquals(TextPosition(2, 1200), TextPosition.decode(restored.locatorJson))
+        assertEquals(4, restored.lastOffset)
+    }
+
+    @Test fun failedProgressPushRemainsRetryable() = runBlocking {
+        val local = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a", progressUpdatedAt = 5000,
+            locatorJson = TextPosition(0, 50).encode())
+        db.bookDao().upsert(local)
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertTrue(runCatching { sync.pushProgress(local) }.isFailure)
+        server.enqueue(MockResponse().setBody("""{"book_id":"remote","client_updated_at":"1970-01-01T00:00:05Z"}"""))
+        sync.pushProgress(local)
+        assertEquals(2, server.requestCount)
+        assertEquals(local.locatorJson, db.bookDao().getBook(local.id)!!.locatorJson)
+    }
+
     @Test fun delayedRegistrationDoesNotOverwriteConcurrentLocalChanges() = runBlocking {
         db.bookDao().upsert(book)
         server.enqueue(MockResponse().setBody("[$remote]").setBodyDelay(300, TimeUnit.MILLISECONDS))

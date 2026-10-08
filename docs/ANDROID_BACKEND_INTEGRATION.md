@@ -30,3 +30,10 @@
 安卓数据库 v10 新增可空 annotations.locatorJson。新文字书签继续在 start_offset 保留旧页码，并通过已有 extras.heartext_text_position 对象传递 heartextTextPositionVersion=1、chapter（从 0 开始）及 character（章节正文 UTF-16 偏移）。旧客户端/无 extras 数据继续使用原页码。
 
 已只读确认后端 AnnotationCreate/Update/Out 支持 extras JSON，模型保留该字段；本地 MockWebServer 验证 POST 和 GET 往返及本地重新合并。未向生产提交书签，真实服务往返仍待非生产账号联调。无需后端变更；如后续后端过滤 extras，需要保留此命名字段。
+
+
+## 阅读进度 locator 扩展
+
+PUT /v1/books/{book_id}/progress 的 extras.heartext_locator 保存原 locator JSON 对象。TXT/EPUB 使用 heartextTextPositionVersion=1 的章节 UTF-16 字符位置；PDF 使用包含现有版本标记的 Readium PDF locator。chapter_index、position、percentage 与含时区时间戳保持原约定。GET 拉取时安卓按本地书籍类型校验；没有扩展字段的较新进度清除旧 locator 并按页码回退，防止旧字符覆盖新进度。
+
+已用本地 MockWebServer 验证文字 locator 往返，尚未执行真实服务写入。后端现有进度 schema 支持 extras；无需更改接口或部署。

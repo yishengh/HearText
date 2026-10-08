@@ -25,7 +25,8 @@ data class ApiProgress(
     val chapterIndex: Int,
     val position: Int,
     val percentage: Double,
-    val clientUpdatedAt: String?
+    val clientUpdatedAt: String?,
+    val locatorJson: String? = null
 )
 
 data class ApiCatalogCategory(

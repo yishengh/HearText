@@ -21,6 +21,8 @@ class CloudSyncRepository(
     private val coverStore: CoverStore
 ) {
     private val registration = Mutex()
+    private val progressPush = Mutex()
+    private val acknowledgedProgress = mutableMapOf<Triple<String, String, String>, Long>()
 
     suspend fun ensureRemoteBook(book: BookEntity): BookEntity = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
         val owner = auth.accountId ?: return@withContext book
@@ -68,12 +70,26 @@ class CloudSyncRepository(
         val owner = auth.accountId ?: return@withContext
         if (!api.isConfigured) return@withContext
         val session = auth.requestSession()
-        val synced = ensureRemoteBook(book)
-        auth.requireSession(session)
-        if (synced.remoteOwnerId != owner || synced.progressUpdatedAt <= 0) return@withContext
-        val remoteId = synced.remoteBookId ?: return@withContext
-        api.putProgress(remoteId, null, synced.lastChapterIndex, synced.lastOffset,
-            synced.progressPercent.toDouble(), Instant.ofEpochMilli(synced.progressUpdatedAt).toString())
+        progressPush.withLock {
+            auth.requireSession(session)
+            val current = bookDao.getBook(book.id) ?: return@withLock
+            val currentKey = Triple(owner, current.id, current.remoteBookId.orEmpty())
+            if (current.progressUpdatedAt <= (acknowledgedProgress[currentKey] ?: 0L)) return@withLock
+            // Local writes finish first; a short window collapses rapid page events into the newest snapshot.
+            kotlinx.coroutines.delay(300)
+            auth.requireSession(session)
+            val synced = ensureRemoteBook(current)
+            auth.requireSession(session)
+            if (synced.remoteOwnerId != owner || synced.progressUpdatedAt <= 0) return@withLock
+            val remoteId = synced.remoteBookId ?: return@withLock
+            val key = Triple(owner, synced.id, remoteId)
+            if (synced.progressUpdatedAt <= (acknowledgedProgress[key] ?: 0L)) return@withLock
+            api.putProgress(remoteId, null, synced.lastChapterIndex, synced.lastOffset,
+                synced.progressPercent.toDouble(), Instant.ofEpochMilli(synced.progressUpdatedAt).toString(),
+                synced.locatorJson)
+            auth.requireSession(session)
+            acknowledgedProgress[key] = synced.progressUpdatedAt
+        }
     }
 
     suspend fun pullAndMergeProgress() = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
@@ -94,8 +110,19 @@ class CloudSyncRepository(
             val updatedAt = runCatching { Instant.parse(progress.clientUpdatedAt).toEpochMilli() }.getOrNull() ?: continue
             if (!progress.percentage.isFinite() || progress.chapterIndex < 0 || progress.position < 0) continue
             bookDao.mergeRemoteProgress(local.id, owner, progress.chapterIndex, progress.position,
-                progress.percentage.toFloat().coerceIn(0f, 100f), updatedAt)
+                progress.percentage.toFloat().coerceIn(0f, 100f), updatedAt,
+                compatibleLocator(local, progress.locatorJson, progress.chapterIndex))
         }
+    }
+
+    private fun compatibleLocator(book: BookEntity, json: String?, chapter: Int): String? {
+        if (json == null) return null
+        if (book.format != BookFormat.PDF) {
+            return TextPosition.decode(json)?.takeIf { it.chapter == chapter }?.encode()
+        }
+        return runCatching {
+            org.json.JSONObject(json).takeIf { it.optString("type") == "application/pdf" }?.toString()
+        }.getOrNull()
     }
 
     suspend fun pushAllLocalBooks() = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {

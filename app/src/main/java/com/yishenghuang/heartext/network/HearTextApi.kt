@@ -128,14 +128,17 @@ class HearTextApi(
         chapterIndex: Int,
         position: Int,
         percentage: Double,
-        clientUpdatedAtIso: String
+        clientUpdatedAtIso: String,
+        locatorJson: String? = null
     ): ApiProgress = withContext(Dispatchers.IO) {
         val payload = JSONObject()
             .put("chapter_id", chapterId)
             .put("chapter_index", chapterIndex)
             .put("position", position)
             .put("percentage", percentage)
-            .put("extras", JSONObject())
+            .put("extras", JSONObject().apply {
+                locatorJson?.let { raw -> runCatching { JSONObject(raw) }.getOrNull()?.let { put("heartext_locator", it) } }
+            })
             .put("client_updated_at", clientUpdatedAtIso)
         parseProgress(authorizedJson("PUT", "/v1/books/$bookId/progress", payload.toString()), bookId)
     }
@@ -526,7 +529,8 @@ class HearTextApi(
         chapterIndex = json.optInt("chapter_index", 0),
         position = json.optInt("position", 0),
         percentage = json.optDouble("percentage", 0.0),
-        clientUpdatedAt = json.optStringOrNull("client_updated_at")
+        clientUpdatedAt = json.optStringOrNull("client_updated_at"),
+        locatorJson = json.optJSONObject("extras")?.optJSONObject("heartext_locator")?.toString()
     )
 
     private fun parseCatalogList(raw: String): ApiCatalogList {

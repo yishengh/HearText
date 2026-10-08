@@ -292,3 +292,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 实际阅读页面测试保存书签后把字号改为 1.8 倍、重建 Activity、跳到其他章节，再点击书签列表，断言原字符回到当前页。该链路通过；并未以仓库单测代替 UI 跳转验证。
 - 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（53s）：Debug、Lint、52 项 JVM、41 项设备测试，0 failures / 0 skipped。日志：build/local-validation/bookmark-ui-verification.log。此前不含 UI 扩展断言的两轮也通过，最终以这轮为准。
 - 新书签本地跨排版及模拟同步已覆盖；历史页码本身不能恢复此前未记录的字符，真实生产同步没有执行。其他既定听书位置、PDF 容器恢复、删除重试与体验审查仍待完成。
+
+
+### 第二十六轮：进度 locator 同步与并发合并
+
+- 进度 PUT/GET 通过现有 extras.heartext_locator 传递 locator；拉取文字进度只接受章节匹配的版本化字符位置，PDF 只接受 PDF 类型 locator。较新的旧客户端进度没有 locator 时清除已有 locator，保留原页码回退及严格时间戳比较。
+- 同一仓库的进度发送串行处理，300 ms 合并窗口后重新读取数据库最新快照；以账号、本地书籍、远程书籍及成功时间戳去重。等待中仍检查原会话，失败不记作成功，下一次同步可重试；本地位置先存 Room，不依赖网络成功。
+- 新设备测试让 12 个并发调用携带旧快照，验证实际只发送一次数据库中的最新页码和字符位置；清除本地 locator 后模拟 GET 验证恢复。另测 503 后再次提交成功、本地位置不丢失。
+- 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m9s）：Debug、Lint、52 项 JVM、43 项设备测试，0 failures / 0 skipped。日志：build/local-validation/progress-sync-verification.log。
+- 合并与成功去重状态仅在当前进程内；持久数据仍由 Room 保留并通过已有登录同步重试，不新增后台常驻任务。PDF locator 传输已实现，但本轮新增往返测试针对文字；真实后端写入未执行。既定 PDF 容器恢复、听书句内位置、书籍删除重试和体验审查仍待完成。

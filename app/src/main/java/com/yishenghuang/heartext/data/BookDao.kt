@@ -75,10 +75,10 @@ interface BookDao {
         source: CoverSource): Int
 
     @Query("""UPDATE books SET lastChapterIndex = :chapter, lastOffset = :offset,
-        progressPercent = :percent, progressUpdatedAt = :updatedAt, locatorJson = NULL
+        progressPercent = :percent, progressUpdatedAt = :updatedAt, locatorJson = :locator
         WHERE id = :id AND remoteOwnerId = :owner AND progressUpdatedAt < :updatedAt""")
     suspend fun mergeRemoteProgress(id: String, owner: String, chapter: Int, offset: Int,
-        percent: Float, updatedAt: Long)
+        percent: Float, updatedAt: Long, locator: String? = null)
 
     @Query("""UPDATE books SET coverPath = :path, coverSource = 'USER'
         WHERE id = :id AND filePath = :filePath AND addedAt = :addedAt
