@@ -210,7 +210,7 @@
     <string name="storage_catalog">书城缓存</string>
     <string name="storage_voices">离线语音</string>
     <string name="storage_fonts">自定义字体</string>
-    <string name="storage_clear_hint">清理不会删除书架上的书籍与封面。可清理书城临时缓存。</string>
+    <string name="storage_clear_hint">清理可重新生成的图片缓存。保留书籍、封面、字体、音色，以及阅读器或系统管理的文件。</string>
     <string name="storage_cleared">已清理缓存 %1$s</string>
     <string name="storage_clear_cache">清理缓存</string>
     <string name="home_title">首页</string>
@@ -331,4 +331,8 @@
     <string name="reader_open_menu">打开阅读菜单</string>
     <string name="reader_previous_page">上一页</string>
     <string name="reader_next_page">下一页</string>
+    <string name="storage_cache">缓存</string>
+    <string name="storage_other">其他应用数据</string>
+    <string name="storage_failed">无法完成存储操作，请重试。</string>
+    <string name="storage_clearing">正在清理…</string>
 </resources>

@@ -379,3 +379,13 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试创建实际 ReadView，检查当前页节点文字、动作及其他页排除标记；执行辅助功能点击打开菜单、前后翻页，再跳到末页确认无前进动作且请求返回 false。原有阅读触摸、排版和书签回归继续通过。
 - 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m12s）：Debug、Lint、54 项 JVM、56 项设备测试，0 failures / 0 skipped。日志：build/local-validation/reader-accessibility-verification.log。
 - 本轮是实际 View 辅助功能接口验证，没有开启 TalkBack 做人工语音与手势验收，不据此认定所有屏幕或第三方 PDF 控件的无障碍体验已覆盖。既定存储清理、多语言及生命周期最终审查继续推进，未发布、推送或生产写入。
+
+### 第三十六轮：存储统计与安全缓存清理
+
+- 原存储按钮在主线程递归删除整个 cacheDir，并把删除前大小直接报作已清理；同时可能触碰阅读器、图片库或其他组件正在使用的文件。现通过 Coil 2.7 自身的缓存接口清理可重新生成的图片缓存，不绕开其快照/编辑器占用保护；不再盲删整个缓存目录或 catalog/.tmp。
+- [Coil 2.7 DiskCache 源码契约](https://raw.githubusercontent.com/coil-kt/coil/2.7.0/coil-base/src/main/java/coil/disk/DiskCache.kt) 明确活动快照/编辑器阻止条目删除。页面说明清理范围，保留书籍、用户封面/字体/音色及阅读器/系统管理文件；不会将未知组件缓存冒充可安全删除数据。
+- 统计和清理在 IO 执行，完整统计快照返回后更新 UI。按钮运行中禁用，失败使用四语言提示；释放量按库报告前后差值计算。统计新增缓存、数据库/偏好及其他应用数据，文件遍历不跟随符号链接；容量显示使用当前语言的 Android Formatter。
+- 新设备测试使用独立真实 Coil 磁盘缓存：空闲条目清理、活动读取快照仍可读、关闭后可清理，并确认书籍、封面、字体、音色、Readium 缓存、下载临时文件和数据库/偏好夹具均保留；分类容量同时核对。
+- 首轮在设备测试中途 emulator-5582 从 ADB 消失；读取系统进程确认无模拟器进程，退出原因未确认，失败日志 storage-cleanup-verification.log 保留且不计作通过。只重启本任务 Small_Tablet/5582，确认启动完成后重跑。
+- 最终完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（1m46s）：Debug、Lint、54 项 JVM、57 项设备测试，0 failures / 0 skipped。日志：build/local-validation/storage-cleanup-retry.log。本轮模拟器 wrapper PID 20456 仅用于记录，任何后续操作前必须重新验证所属进程。
+- 旧的无引用字体/封面仍保留，不将其当作普通缓存删除；没有新增自动文件回收。清理页未进行人工点击验收，真实缓存行为已设备测试。其他既定多语言及生命周期审查继续推进，未发布、推送或生产写入。

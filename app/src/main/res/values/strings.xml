@@ -210,7 +210,7 @@
     <string name="storage_catalog">Store cache</string>
     <string name="storage_voices">Offline voices</string>
     <string name="storage_fonts">Custom fonts</string>
-    <string name="storage_clear_hint">Clearing won’t remove books or covers on your shelf. Store temp cache can be cleared.</string>
+    <string name="storage_clear_hint">Clears reusable image caches. Books, covers, fonts, voices and reader or system-managed files are kept.</string>
     <string name="storage_cleared">Cleared cache %1$s</string>
     <string name="storage_clear_cache">Clear cache</string>
     <string name="home_title">Home</string>
@@ -331,4 +331,8 @@
     <string name="reader_open_menu">Open reading menu</string>
     <string name="reader_previous_page">Previous page</string>
     <string name="reader_next_page">Next page</string>
+    <string name="storage_cache">Cache</string>
+    <string name="storage_other">Other app data</string>
+    <string name="storage_failed">Could not complete the storage operation. Please try again.</string>
+    <string name="storage_clearing">Clearing…</string>
 </resources>

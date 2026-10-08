@@ -210,7 +210,7 @@
     <string name="storage_catalog">Cache boutique</string>
     <string name="storage_voices">Voix hors ligne</string>
     <string name="storage_fonts">Polices perso</string>
-    <string name="storage_clear_hint">Le nettoyage ne supprime pas les livres ni les couvertures. Le cache temporaire de la boutique peut être vidé.</string>
+    <string name="storage_clear_hint">Efface les caches d’images réutilisables. Conserve les livres, couvertures, polices, voix et fichiers gérés par le lecteur ou le système.</string>
     <string name="storage_cleared">Cache vidé %1$s</string>
     <string name="storage_clear_cache">Vider le cache</string>
     <string name="home_title">Accueil</string>
@@ -331,4 +331,8 @@
     <string name="reader_open_menu">Ouvrir le menu de lecture</string>
     <string name="reader_previous_page">Page précédente</string>
     <string name="reader_next_page">Page suivante</string>
+    <string name="storage_cache">Cache</string>
+    <string name="storage_other">Autres données</string>
+    <string name="storage_failed">Impossible de terminer cette opération. Veuillez réessayer.</string>
+    <string name="storage_clearing">Nettoyage…</string>
 </resources>
