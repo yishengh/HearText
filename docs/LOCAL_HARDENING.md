@@ -182,3 +182,14 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新增真实 Android 分页测试覆盖无字号变化的字体/行距重排、跳转其他章节后缩小窗口、强制重排、越界字符和连续跳转。断言原文字仍位于当前页，未只检查页码相同。
 - 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（57s）：Debug、Lint、45 项 JVM、35 项设备测试，0 failures / 0 skipped。未发布或访问生产写接口。
 - 本轮针对打开页面期间的重排。退出重开后的字符定位、书签跨排版定位及 PDF 导航器重建仍需单独完成，未由本轮测试推定通过。
+
+### 第十四轮：PDF 位置监听、页码修复与旧位置迁移
+
+- 移除等待 300 ms 后只查找一次 Fragment 的监听方式，改为注册 Fragment 生命周期回调，连接现有及随后创建的阅读器；离开页面时取消订阅并注销回调。位置流保留最近一项，晚订阅也能得到当前页。Compose 使用最新回调，容器 ID 可随保存状态恢复。
+- Host 保存当前 locator 到 Fragment 状态，重建时优先恢复；销毁 view 时清除 navigator 与方向导航安装标记。真实三页 PDF 测试覆盖延迟 500 ms 创建、导航、晚订阅和保存/重建，同时核对底层渲染器实际页码。
+- 真实测试发现 Readium 3.3.0 Pdfium 页码转换错误；本地 AAR 字节码及设备 locator 日志与上游 [问题 #811](https://github.com/readium/kotlin-toolkit/issues/811) 一致。升级到包含修复的 [3.4.0](https://github.com/readium/kotlin-toolkit/releases/tag/3.4.0)，明确使用水平分页。未在应用中加入临时页码加减补偿。
+- 依照 [上游迁移说明](https://github.com/readium/kotlin-toolkit/blob/3.4.0/docs/migration-guide.md)，旧 PDF locator 经 Publication.migrateLegacyPdfiumLocator 校正；新保存值携带 heartextPdfiumLocatorVersion=1，重复打开不再次迁移。测试从旧值通过真实仓库打开，验证实际恢复第二页、新编码重复恢复不变，再导航到第三页。旧版未曾记录的最后一页不能凭现有数据重建；迁移只校正已有记录。
+- 新依赖的 Kotlin 2.4 元数据要求升级 Kotlin/Compose 编译插件至 2.4.20、KSP 至 2.3.10；按 [AGP 官方方式](https://developer.android.com/build/releases/agp-9-0-0-release-notes#upgrade-to-a-higher-kgp-version) 显式对齐内置 Kotlin。SDK 目标、minSdk、签名身份及发布配置未修改。迁移或构造被取消/失败时关闭 publication。
+- 验证过程中修复了测试资源关闭/Unit 返回类型、locator 中不一致的页码片段，以及渲染尚未就绪时过早导航/断言的问题。最终等待条件同时检查 locator 与渲染器页码，不放宽位置要求。先前失败轮次不计作通过。
+- 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（51s）：Debug、Lint、45 项 JVM、36 项设备测试，0 failures / 0 skipped；真实系统/离线语音及数据库迁移回归通过。完整日志位于 build/local-validation/full-pdf-verification.log。
+- 尚未证明系统杀进程后的完整页面恢复；无 session 时的已恢复 Fragment、共享 session 的最新初始位置仍需处理。正文字符锚点、书签跨排版定位及书籍离线删除重试也仍在既定清单中。没有发布、推送或生产写入。

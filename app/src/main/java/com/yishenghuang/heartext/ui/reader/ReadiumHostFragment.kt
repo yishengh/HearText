@@ -12,6 +12,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.yishenghuang.heartext.HearTextApp
 import com.yishenghuang.heartext.R
 import com.yishenghuang.heartext.readium.EpubPreferenceMapper
+import com.yishenghuang.heartext.readium.PdfLocatorCodec
 import com.yishenghuang.heartext.readium.ReaderSession
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,20 +38,21 @@ class ReadiumHostFragment : Fragment() {
     private var navigator: Navigator? = null
     private var directionalAttached = false
 
-    private val _locatorUpdates = MutableSharedFlow<Locator>(extraBufferCapacity = 8)
+    private val _locatorUpdates = MutableSharedFlow<Locator>(replay = 1, extraBufferCapacity = 8)
     val locatorUpdates: SharedFlow<Locator> = _locatorUpdates.asSharedFlow()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         bookId = requireArguments().getString(ARG_BOOK_ID).orEmpty()
         val app = requireActivity().application as HearTextApp
         val session = app.container.readerSessions[bookId]
+        val restoredLocator = parseLocator(savedInstanceState?.getString(STATE_LOCATOR))
         val livePrefs = EpubPreferenceMapper.from(app.container.readerPreferences.settings.value)
 
         when (session) {
             is ReaderSession.Epub -> {
                 childFragmentManager.fragmentFactory =
                     session.navigatorFactory.createFragmentFactory(
-                        initialLocator = session.initialLocator,
+                        initialLocator = restoredLocator ?: session.initialLocator,
                         initialPreferences = livePrefs,
                         listener = null
                     )
@@ -58,7 +60,7 @@ class ReadiumHostFragment : Fragment() {
             is ReaderSession.Pdf -> {
                 childFragmentManager.fragmentFactory =
                     session.navigatorFactory.createFragmentFactory(
-                        initialLocator = session.initialLocator,
+                        initialLocator = restoredLocator ?: session.initialLocator,
                         initialPreferences = session.initialPreferences,
                         listener = null
                     )
@@ -128,6 +130,17 @@ class ReadiumHostFragment : Fragment() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        navigator?.currentLocator?.value?.let { outState.putString(STATE_LOCATOR, locatorToJson(it)) }
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroyView() {
+        navigator = null
+        directionalAttached = false
+        super.onDestroyView()
+    }
+
     private fun attachDirectionalIfNeeded(settings: com.yishenghuang.heartext.data.ReaderSettings) {
         val overflow = navigator as? OverflowableNavigator ?: return
         if (directionalAttached) return
@@ -141,11 +154,10 @@ class ReadiumHostFragment : Fragment() {
         directionalAttached = true
     }
 
-    fun go(locator: Locator) {
-        navigator?.go(locator)
-    }
+    fun go(locator: Locator): Boolean = navigator?.go(locator) == true
 
     companion object {
+        private const val STATE_LOCATOR = "currentLocator"
         private const val ARG_BOOK_ID = "bookId"
         private const val NAVIGATOR_TAG = "readium_navigator"
 
@@ -155,7 +167,7 @@ class ReadiumHostFragment : Fragment() {
             }
         }
 
-        fun locatorToJson(locator: Locator): String = locator.toJSON().toString()
+        fun locatorToJson(locator: Locator): String = PdfLocatorCodec.encode(locator)
 
         fun progressionPercent(locator: Locator): Float {
             val total = locator.locations.totalProgression ?: return 0f

@@ -28,6 +28,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -701,10 +703,16 @@ private fun ReadiumPagerHost(
     onLocator: (json: String, percent: Float) -> Unit
 ) {
     val activity = androidx.activity.compose.LocalActivity.current as? FragmentActivity ?: return
-    val containerId = remember { android.view.View.generateViewId() }
+    val containerId = rememberSaveable { android.view.View.generateViewId() }
+    val scope = rememberCoroutineScope()
+    val latestOnLocator by rememberUpdatedState(onLocator)
 
-    DisposableEffect(bookId) {
+    DisposableEffect(activity, bookId) {
+        val observer = activity.supportFragmentManager.observeReadiumLocators("readium_$bookId", scope) {
+            latestOnLocator(ReadiumHostFragment.locatorToJson(it), ReadiumHostFragment.progressionPercent(it))
+        }
         onDispose {
+            observer.close()
             val existing = activity.supportFragmentManager.findFragmentByTag("readium_$bookId")
             if (existing != null) {
                 activity.supportFragmentManager.commit(allowStateLoss = true) {
@@ -736,15 +744,5 @@ private fun ReadiumPagerHost(
         }
     )
 
-    LaunchedEffect(bookId) {
-        kotlinx.coroutines.delay(300)
-        val host = activity.supportFragmentManager
-            .findFragmentByTag("readium_$bookId") as? ReadiumHostFragment
-        host?.locatorUpdates?.collectLatest { locator ->
-            onLocator(
-                ReadiumHostFragment.locatorToJson(locator),
-                ReadiumHostFragment.progressionPercent(locator)
-            )
-        }
-    }
+
 }

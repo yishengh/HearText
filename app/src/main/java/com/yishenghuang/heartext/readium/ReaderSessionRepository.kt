@@ -1,9 +1,10 @@
 package com.yishenghuang.heartext.readium
 
 import android.app.Application
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.json.JSONObject
 import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.adapter.pdfium.navigator.PdfiumPreferences
 import org.readium.adapter.pdfium.navigator.PdfiumPreferencesEditor
@@ -94,54 +95,59 @@ class ReaderSessionRepository(
             return Result.failure(IllegalStateException("Protected publication is not supported yet"))
         }
 
-        val initialLocator = locatorJson
-            ?.takeIf { it.isNotBlank() }
-            ?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+        try {
+            val initialLocator = PdfLocatorCodec.restore(publication, locatorJson)
 
-        val session = when {
-            publication.conformsTo(Publication.Profile.PDF) -> {
-                ReaderSession.Pdf(
-                    bookId = bookId,
-                    publication = publication,
-                    initialLocator = initialLocator,
-                    navigatorFactory = PdfNavigatorFactory(
+            val session = when {
+                publication.conformsTo(Publication.Profile.PDF) -> {
+                    ReaderSession.Pdf(
+                        bookId = bookId,
                         publication = publication,
-                        pdfEngineProvider = PdfiumEngineProvider()
-                    ),
-                    initialPreferences = PdfiumPreferences(
-                        fit = org.readium.r2.navigator.preferences.Fit.CONTAIN,
-                        pageSpacing = 12.0,
-                        scrollAxis = org.readium.r2.navigator.preferences.Axis.HORIZONTAL
-                    )
-                )
-            }
-            else -> {
-                val epubPrefs = EpubPreferenceMapper.from(
-                    // Defaults; live prefs applied in ReadiumHostFragment
-                    com.yishenghuang.heartext.data.ReaderSettings(pageTurnEffect = PageTurnEffect.SLIDE)
-                )
-                ReaderSession.Epub(
-                    bookId = bookId,
-                    publication = publication,
-                    initialLocator = initialLocator,
-                    navigatorFactory = EpubNavigatorFactory(
-                        publication = publication,
-                        configuration = EpubNavigatorFactory.Configuration(
-                            defaults = EpubDefaults(
-                                scroll = false,
-                                columnCount = ColumnCount.ONE,
-                                pageMargins = 1.2
-                            )
+                        initialLocator = initialLocator,
+                        navigatorFactory = PdfNavigatorFactory(
+                            publication = publication,
+                            pdfEngineProvider = PdfiumEngineProvider()
+                        ),
+                        initialPreferences = PdfiumPreferences(
+                            scroll = false,
+                            fit = org.readium.r2.navigator.preferences.Fit.CONTAIN,
+                            pageSpacing = 12.0,
+                            scrollAxis = org.readium.r2.navigator.preferences.Axis.HORIZONTAL
                         )
-                    ),
-                    initialPreferences = epubPrefs
-                )
+                    )
+                }
+                else -> {
+                    val epubPrefs = EpubPreferenceMapper.from(
+                        // Defaults; live prefs applied in ReadiumHostFragment
+                        com.yishenghuang.heartext.data.ReaderSettings(pageTurnEffect = PageTurnEffect.SLIDE)
+                    )
+                    ReaderSession.Epub(
+                        bookId = bookId,
+                        publication = publication,
+                        initialLocator = initialLocator,
+                        navigatorFactory = EpubNavigatorFactory(
+                            publication = publication,
+                            configuration = EpubNavigatorFactory.Configuration(
+                                defaults = EpubDefaults(
+                                    scroll = false,
+                                    columnCount = ColumnCount.ONE,
+                                    pageMargins = 1.2
+                                )
+                            )
+                        ),
+                        initialPreferences = epubPrefs
+                    )
+                }
             }
-        }
 
-        sessions[bookId] = session
-        references[bookId] = 1
-        Result.success(session)
+            currentCoroutineContext().ensureActive()
+            sessions[bookId] = session
+            references[bookId] = 1
+            Result.success(session)
+        } catch (failure: Throwable) {
+            publication.close()
+            throw failure
+        }
     }
 
     suspend fun close(session: ReaderSession) = mutex.withLock {
