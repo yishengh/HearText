@@ -311,3 +311,11 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 移除额外的显式前台服务启动，保留 MediaController 绑定，让 Media3 按实际播放状态管理前台生命周期，符合 [MediaSessionService 后台播放文档](https://developer.android.com/media/media3/session/background-playback)。原失败测试随后通过。该结果不是对所有系统后台限制、通知操作或锁屏硬件按钮的完整验证。
 - 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m4s）：Debug、Lint、52 项 JVM、44 项设备测试，0 failures / 0 skipped。日志：build/local-validation/spoken-position-service.log。首轮崩溃记录保留在 spoken-position-verification.log，不计作通过。
 - 仍需验证完整后台/锁屏媒体流程及系统杀进程恢复；既定 PDF 容器、书籍删除重试和体验审查继续推进。未发布、推送或执行生产写入。
+
+
+### 第二十八轮：后台媒体控制与可信连接
+
+- 扩展真实协调器设备测试：建立独立 MediaController，恢复播放后检查系统报告的服务 foreground 状态，再把 Activity 移到 CREATED（已停止），通过媒体会话执行暂停、恢复、停止，并核对协调器状态。证明上一轮移除显式 FGS 启动后，Media3 仍能把实际播放提升为前台服务并处理后台控制。
+- onGetSession 仅向 isTrusted 控制器提供会话，避免任意外部控制器取得播放控制和元数据；根据 [Media3 ControllerInfo 官方定义](https://developer.android.com/reference/androidx/media3/session/MediaSession.ControllerInfo)，同应用、系统及用户授予媒体控制权限的控制器仍可信，不以可伪造的包名字符串放行。
+- 加入信任检查前的完整后台测试通过（1m45s）；最终检查后再次完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m58s）：Debug、Lint、52 项 JVM、44 项设备测试，0 failures / 0 skipped。日志：build/local-validation/trusted-media-verification.log。
+- 本轮实际验证同应用媒体控制器及前台服务状态。未安装独立不可信测试应用，未实测蓝牙耳机、车载或不同厂商锁屏，不能将程序化会话控制当作这些物理设备的验证。没有新增权限、发布或生产写入。

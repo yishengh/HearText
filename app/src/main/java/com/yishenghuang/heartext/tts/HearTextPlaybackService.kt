@@ -80,7 +80,7 @@ class HearTextPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        mediaSession
+        mediaSession.takeIf { controllerInfo.isTrusted }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val playing = player?.isPlaying == true
