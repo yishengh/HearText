@@ -306,11 +306,12 @@ fun ReaderScreen(
                             pendingSearchJump = pendingSearchJump,
                             suppressPageSync = suppressPageSync,
                             onSearchJumpConsumed = { pendingSearchJump = null },
-                            onPageProgress = { chapter, page, total ->
+                            initialCharacter = viewModel.textPosition?.takeIf { it.chapter == chapterIndex }?.character,
+                            onPageProgress = { chapter, page, total, character ->
                                 suppressPageSync = false
                                 pageIndex = page
                                 pageCount = total.coerceAtLeast(1)
-                                viewModel.onEnginePageChanged(chapter, page, total)
+                                viewModel.onEnginePageChanged(chapter, page, total, character)
                             },
                             onPageCharOffsetProvider = { provider ->
                                 viewModel.pageCharOffsetProvider = provider
@@ -538,7 +539,8 @@ private fun LumiReadHost(
     pendingSearchJump: ReaderSearchHit?,
     suppressPageSync: Boolean,
     onSearchJumpConsumed: () -> Unit,
-    onPageProgress: (chapter: Int, page: Int, total: Int) -> Unit,
+    initialCharacter: Int?,
+    onPageProgress: (chapter: Int, page: Int, total: Int, character: Int?) -> Unit,
     onPageCharOffsetProvider: ((() -> Int?)?) -> Unit = {},
     onCenterTap: () -> Unit
 ) {
@@ -586,8 +588,8 @@ private fun LumiReadHost(
     LaunchedEffect(chapterIndex, pageIndex, suppressPageSync, pendingSearchJump) {
         if (pendingSearchJump != null || suppressPageSync) return@LaunchedEffect
         val view = readViewRef.value ?: return@LaunchedEffect
-        val loc = view.getCurrentLocation()
-        if (loc == null || loc.first != chapterIndex || loc.second != pageIndex) {
+        val loc = view.getCurrentLocation() ?: return@LaunchedEffect
+        if (loc.first != chapterIndex || loc.second != pageIndex) {
             view.jumpToChapter(chapterIndex, pageIndex.coerceAtLeast(0))
         }
     }
@@ -629,7 +631,7 @@ private fun LumiReadHost(
                         pageInChapter: Int,
                         chapterTotalPages: Int
                     ) {
-                        onPageProgress(chapterIndex, pageInChapter, chapterTotalPages)
+                        onPageProgress(chapterIndex, pageInChapter, chapterTotalPages, getCurrentPageStartCharacterOffset())
                     }
 
                     override fun onMenuToggle() {
@@ -663,6 +665,7 @@ private fun LumiReadHost(
                 chapterCount = chapterSnapshot.size,
                 startChapter = chapterIndex.coerceIn(0, (chapterSnapshot.size - 1).coerceAtLeast(0)),
                 startPage = pageIndex.coerceAtLeast(0),
+                initialCharacter = initialCharacter,
                 lineHeightMult = settings.lineHeight,
                 letterSpacingDp = letterSpacingDp,
                 fontType = fontTypeKey(settings.fontFamily),

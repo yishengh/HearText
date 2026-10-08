@@ -73,8 +73,8 @@ class ReaderLifecycleTest {
         val vm = reader("text")
         withTimeout(5000) { vm.sessionReady.first { it } }
         withContext(Dispatchers.Main) {
-            vm.onEnginePageChanged(0, 3, 10)
-            vm.onEnginePageChanged(0, 4, 10)
+            vm.onEnginePageChanged(0, 3, 10, 120)
+            vm.onEnginePageChanged(0, 4, 10, 240)
             models.clear()
         }
         assertEquals(0, db.bookDao().getBook("text")!!.lastOffset)
@@ -82,6 +82,14 @@ class ReaderLifecycleTest {
         withTimeout(5000) { while (db.bookDao().getBook("text")!!.lastOffset != 4) delay(10) }
         books.updateProgress("text", 0, 1, 1f, updatedAt = oldTimestamp)
         assertEquals(4, db.bookDao().getBook("text")!!.lastOffset)
+        assertEquals(TextPosition(0, 240), TextPosition.decode(db.bookDao().getBook("text")!!.locatorJson))
+        val reopened = reader("text")
+        withTimeout(5000) { reopened.sessionReady.first { it } }
+        assertEquals(TextPosition(0, 240), reopened.textPosition)
+        assertNull(TextPosition.decode("""{"locations":{"position":4}}"""))
+        assertNull(TextPosition.decode("""{"heartextTextPositionVersion":2,"chapter":0,"character":240}"""))
+        assertNull(TextPosition.decode(TextPosition(0, -1).encode()))
+
     }
 
     @Test fun clearingPdfReaderReleasesItsPublicationOutsideCancelledScope() = runBlocking {

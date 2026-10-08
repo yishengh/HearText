@@ -34,8 +34,15 @@ class LocalReaderSmokeTest {
         }
         compose.onNodeWithContentDescription(libraryLabel).performClick()
         compose.onNodeWithContentDescription(libraryLabel).assertIsSelected()
-        compose.waitUntil(30_000) {
-            compose.onAllNodesWithTag("library-book-OL138052W").fetchSemanticsNodes().isNotEmpty()
+        try {
+            compose.waitUntil(30_000) {
+                compose.onAllNodesWithTag("library-book-OL138052W").fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (failure: Throwable) {
+            val app = compose.activity.application as HearTextApp
+            val exists = runBlocking { app.container.bookRepository.getBook("OL138052W") } != null
+            val seeded = app.getSharedPreferences("library_state", 0).getBoolean("sample_seeded", false)
+            throw AssertionError("Sample visible timeout: databaseEntry=$exists, seeded=$seeded", failure)
         }
         compose.onNodeWithTag("library-book-OL138052W").assertIsDisplayed().performClick()
         val readLabel = compose.activity.getString(R.string.keep_reading)
@@ -75,6 +82,27 @@ class LocalReaderSmokeTest {
         compose.activityRule.scenario.recreate()
         waitForReader()
         compose.runOnUiThread { assertEquals(expected, reader()!!.getCurrentLocation()) }
+        var character = 0
+        compose.runOnUiThread { character = reader()!!.getCurrentPageStartCharacterOffset()!! }
+        compose.waitUntil(30_000) {
+            val saved = runBlocking { app.container.bookRepository.getBook("OL138052W") }
+            com.yishenghuang.heartext.data.TextPosition.decode(saved?.locatorJson)?.character == character
+        }
+        val previous = app.container.readerPreferences.settings.value
+        try {
+            compose.runOnUiThread {
+                app.container.readerPreferences.update { it.copy(fontScale = 1.8f) }
+            }
+            compose.activityRule.scenario.recreate()
+            waitForReader()
+            compose.runOnUiThread {
+                val range = reader()!!.getCurrentPageCharacterRange()!!
+                assertTrue("Saved character must remain visible after changed typography", character in range)
+            }
+        } finally {
+            compose.runOnUiThread { app.container.readerPreferences.update { previous } }
+        }
+
     }
 
     private fun waitForReader() {

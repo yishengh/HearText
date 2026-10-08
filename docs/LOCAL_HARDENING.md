@@ -244,3 +244,13 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新增本地 MockWebServer 测试：503/0 和 408 的 PATCH 都只收到一次请求，超大 Retry-After 仍返回受控异常且保留旧下载。原有 401、取消、换号与限流回归通过。
 - 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m5s）：Debug、Lint、52 项 JVM、37 项设备测试，0 failures / 0 skipped。真实系统/离线语音、阅读重建及同步回归均包含在本轮设备运行中。日志：build/local-validation/http-replay-verification.log。
 - 此次结果关闭底层 HTTP 自动重试检查项，不代表既定书籍删除重试、持久字符位置和全局体验审查已完成。未发布、推送或访问生产写接口。
+
+
+### 第二十一轮：本地文字位置持久化
+
+- TXT/EPUB 翻页保存独立版本标记的章节字符偏移到现有 locatorJson，同时保留旧页码字段。新会话从数据库恢复字符位置；无标记、未知版本或无效字符值仍走原页码回退，不将 PDF locator 当成文字位置。章节/页码显式改变时丢弃不匹配的旧字符位置。
+- ReadView 首次排版前接收字符定位，窗口尚无尺寸时保留待定位状态。Compose 不再在当前页尚未加载时强行用页码跳转，避免清掉初始字符定位。正常重排继续保留当前文字。
+- 真实阅读冒烟测试在保存位置后修改字号至 1.8 倍并重建 Activity，断言原字符仍在当前页；生命周期测试销毁旧 ViewModel 后从 Room 创建新会话，验证恢复字符位置及旧时间戳不能覆盖新位置，并检查旧/未知版本回退。
+- 实现后的首轮完整验证通过；补充新会话断言后发生模拟器进程退出，重启后一次示例书可见性超时。该超时发生在阅读器打开前，尚未确认根因，不能归因于字符定位；已加入只记录数据库条目存在与初始化标记的失败诊断。最终重跑通过，不将前两次失败记作通过。
+- 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（50s）：Debug、Lint、52 项 JVM、37 项设备测试，0 failures / 0 skipped。日志：build/local-validation/text-position-confirm.log。模拟器本轮恢复采用软件渲染；没有证据断言此前进程退出的原因。
+- 本轮覆盖本地文字进度、数据库新会话恢复和 Activity 重建。尚未实测完整 OS 杀进程恢复；书签跨排版定位、听书句内位置、云端字符同步和示例初始化间歇问题仍待完成。没有生产写入、发布或推送。

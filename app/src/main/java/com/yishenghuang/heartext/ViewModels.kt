@@ -202,6 +202,9 @@ class ReaderViewModel(
     private val _listeningEnabled = MutableStateFlow(true)
     val listeningEnabled: StateFlow<Boolean> = _listeningEnabled.asStateFlow()
 
+    internal var textPosition: com.yishenghuang.heartext.data.TextPosition? = null
+        private set
+
     private val _sessionReady = MutableStateFlow(false)
     val sessionReady: StateFlow<Boolean> = _sessionReady.asStateFlow()
 
@@ -214,6 +217,8 @@ class ReaderViewModel(
                 return@launch
             }
             lastKnownOffset = entity.lastOffset
+            textPosition = com.yishenghuang.heartext.data.TextPosition.decode(entity.locatorJson)
+                ?.takeIf { it.chapter == entity.lastChapterIndex }
 
             when (entity.format) {
                 BookFormat.TXT, BookFormat.EPUB -> {
@@ -466,11 +471,15 @@ class ReaderViewModel(
     private var lastKnownChapterPages: Int = 1
 
     /** Sync chapter/page from the Lumi ReadView engine. */
-    fun onEnginePageChanged(chapterIndex: Int, pageInChapter: Int, chapterTotalPages: Int) {
+    fun onEnginePageChanged(chapterIndex: Int, pageInChapter: Int, chapterTotalPages: Int, characterOffset: Int? = null) {
         val chapters = _chapters.value
         if (chapters.isNotEmpty()) {
             _chapterIndex.value = chapterIndex.coerceIn(0, chapters.lastIndex)
         }
+        textPosition = characterOffset?.takeIf { it >= 0 }?.let {
+            com.yishenghuang.heartext.data.TextPosition(chapterIndex, it)
+        }
+        lastKnownOffset = pageInChapter.coerceAtLeast(0)
         lastKnownChapterPages = chapterTotalPages.coerceAtLeast(1)
         persistProgress(
             offset = pageInChapter.coerceAtLeast(0),
@@ -584,7 +593,9 @@ class ReaderViewModel(
         val chapter = _chapterIndex.value.coerceIn(0, totalChapters - 1)
         val pages = (chapterPages ?: lastKnownChapterPages).coerceAtLeast(1)
         val page = (offset ?: lastKnownOffset).coerceAtLeast(0)
+        if (page != lastKnownOffset || textPosition?.chapter != chapter) textPosition = null
         lastKnownOffset = page
+        val locator = (textPosition ?: com.yishenghuang.heartext.data.TextPosition(chapter, -1)).encode()
         val percent = if (chapters.isEmpty()) {
             book.value?.progressPercent ?: 0f
         } else {
@@ -602,6 +613,7 @@ class ReaderViewModel(
                 chapterIndex = chapter,
                 offset = page,
                 progressPercent = percent,
+                locatorJson = locator,
                 totalChapters = chapters.size.takeIf { it > 0 },
                 updatedAt = timestamp
             )

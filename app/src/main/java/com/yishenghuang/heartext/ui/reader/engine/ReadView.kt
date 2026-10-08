@@ -381,8 +381,12 @@ class ReadView(context: Context) : FrameLayout(context) {
         bottomOverlayInsetDp: Float = 0f,
         paragraphSpacingDp: Float = 2f,
         width: Int = this.width,
-        height: Int = this.height
+        height: Int = this.height,
+        initialCharacter: Int? = null
     ) {
+        if (!isConfigured && initialCharacter != null) {
+            slotManager.setPendingCharacter(startChapter, initialCharacter.coerceAtLeast(0))
+        }
         if (width <= 0 || height <= 0 || chapterCount <= 0) {
             pendingStartChapter = startChapter
             pendingStartPage = startPage
