@@ -110,6 +110,31 @@ interface BookDao {
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun delete(id: String)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun queueDeletion(deletion: PendingBookDeletion)
+
+    @Query("SELECT * FROM pending_book_deletions WHERE owner = :owner")
+    suspend fun pendingDeletions(owner: String): List<PendingBookDeletion>
+
+    @Query("DELETE FROM pending_book_deletions WHERE owner = :owner AND localId = :localId")
+    suspend fun acknowledgeDeletion(owner: String, localId: String)
+
+    @Query("DELETE FROM annotations WHERE bookId = :id")
+    suspend fun deleteBookAnnotations(id: String)
+
+    @Transaction
+    suspend fun removeAndQueueDeletion(id: String): BookEntity? {
+        val book = getBook(id) ?: return null
+        book.remoteOwnerId?.let { queueDeletion(PendingBookDeletion(it, id, book.remoteBookId)) }
+        deleteBookAnnotations(id)
+        delete(id)
+        return book
+    }
+
+    @Query("""UPDATE books SET remoteOwnerId = :owner WHERE id = :id
+        AND remoteBookId IS NULL AND (remoteOwnerId IS NULL OR remoteOwnerId = :owner)""")
+    suspend fun claimRegistration(id: String, owner: String): Int
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
 }

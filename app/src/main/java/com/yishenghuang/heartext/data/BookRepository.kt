@@ -406,19 +406,19 @@ class BookRepository(
     }
 
     suspend fun deleteBook(bookId: String) = withContext(Dispatchers.IO) {
-        val book = bookDao.getBook(bookId) ?: return@withContext
-        if (bookId == "OL138052W") {
-            context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
-                .edit().putBoolean("sample_seeded", true).commit()
+        BookMutations.mutex.withLock {
+            withContext(NonCancellable) {
+                val book = bookDao.removeAndQueueDeletion(bookId) ?: return@withContext
+                if (bookId == "OL138052W") {
+                    context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
+                        .edit().putBoolean("sample_seeded", true).commit()
+                }
+                runCatching { File(book.filePath).delete() }
+                coverStore.delete(bookId)
+                book.coverPath?.let { runCatching { File(it).delete() } }
+            }
         }
-        bookDao.delete(bookId)
-        annotationDao?.deleteForBook(bookId)
-        runCatching { File(book.filePath).delete() }
-        coverStore.delete(bookId)
-        book.coverPath?.let { runCatching { File(it).delete() } }
-        book.remoteBookId?.let { remoteId ->
-            runCatching { cloudSync?.deleteRemoteBook(book) }
-        }
+        cloudSync?.flushPendingDeletions()
     }
 
     private fun queryDisplayName(uri: Uri): String? {

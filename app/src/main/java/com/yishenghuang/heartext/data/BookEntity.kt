@@ -22,7 +22,7 @@ data class BookEntity(
     val addedAt: Long = System.currentTimeMillis(),
     /** Server UUID from POST /v1/books; null until first successful sync. */
     val remoteBookId: String? = null,
-    /** Verified Clerk account owning remoteBookId; null for unsynced/legacy books. */
+    /** Verified account or durable registration owner; null before registration/for legacy books. */
     val remoteOwnerId: String? = null,
     /** Epoch millis used for progress LWW as client_updated_at. */
     val progressUpdatedAt: Long = 0L,

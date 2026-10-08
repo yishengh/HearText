@@ -33,8 +33,8 @@ class Converters {
 }
 
 @Database(
-    entities = [BookEntity::class, AnnotationEntity::class],
-    version = 10,
+    entities = [BookEntity::class, AnnotationEntity::class, PendingBookDeletion::class],
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -121,8 +121,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS pending_book_deletions (
+                    owner TEXT NOT NULL, localId TEXT NOT NULL, remoteId TEXT,
+                    PRIMARY KEY(owner, localId))""")
+            }
+        }
+
         internal val migrations = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-            MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+            MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
         @Volatile
         private var instance: AppDatabase? = null

@@ -13,10 +13,30 @@ import org.junit.Test
 import java.util.UUID
 
 class DatabaseMigrationTest {
+    @Test fun pendingDeletionSurvivesDatabaseReopen() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
+        val name = "deletion-${UUID.randomUUID()}.db"
+        try {
+            Room.databaseBuilder(context, AppDatabase::class.java, name).build().let { database ->
+                try {
+                    database.bookDao().queueDeletion(com.yishenghuang.heartext.data.PendingBookDeletion(
+                        "owner", "local", "remote"))
+                } finally { database.close() }
+            }
+            Room.databaseBuilder(context, AppDatabase::class.java, name).build().let { database ->
+                try {
+                    assertEquals("remote", database.bookDao().pendingDeletions("owner").single().remoteId)
+                    assertTrue(database.bookDao().pendingDeletions("other").isEmpty())
+                } finally { database.close() }
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun oldestAndPreviousSchemasPreserveBooksAndAnnotations() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
-        for (version in listOf(1, 7, 8, 9)) {
+        for (version in listOf(1, 7, 8, 9, 10)) {
             val name = "migration-${UUID.randomUUID()}.db"
             val helper = FrameworkSQLiteOpenHelperFactory().create(
                 SupportSQLiteOpenHelper.Configuration.builder(context).name(name)

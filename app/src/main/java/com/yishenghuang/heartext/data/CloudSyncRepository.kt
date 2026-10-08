@@ -20,7 +20,6 @@ class CloudSyncRepository(
     private val auth: SessionTokenProvider,
     private val coverStore: CoverStore
 ) {
-    private val registration = Mutex()
     private val progressPush = Mutex()
     private val acknowledgedProgress = mutableMapOf<Triple<String, String, String>, Long>()
 
@@ -28,7 +27,7 @@ class CloudSyncRepository(
         val owner = auth.accountId ?: return@withContext book
         if (!api.isConfigured) return@withContext book
         val session = auth.requestSession()
-        registration.withLock {
+        BookMutations.mutex.withLock {
             auth.requireSession(session)
             val current = bookDao.getBook(book.id) ?: throw CancellationException("Book removed")
             if (current.remoteOwnerId != null && current.remoteOwnerId != owner) return@withLock current
@@ -41,6 +40,9 @@ class CloudSyncRepository(
             }
             // Legacy remote IDs require positive server evidence before assigning an owner.
             if (existing == null && current.remoteBookId != null) return@withLock current
+            // Persist ownership before POST: a lost response may still have created the remote book.
+            if (existing == null && bookDao.claimRegistration(current.id, owner) != 1)
+                throw CancellationException("Book changed")
             val remote = existing ?: api.createBook(current.id, current.title, current.author,
                 current.format.name.lowercase(), current.coverUrl)
             auth.requireSession(session)
@@ -128,6 +130,7 @@ class CloudSyncRepository(
     suspend fun pushAllLocalBooks() = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
         if (!auth.isSignedIn || !api.isConfigured) return@withContext
         val session = auth.requestSession()
+        flushPendingDeletions()
         for (book in bookDao.getAll()) {
             auth.requireSession(session)
             try {
@@ -140,9 +143,31 @@ class CloudSyncRepository(
         }
     }
 
-    suspend fun deleteRemoteBook(book: BookEntity) = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
-        if (!api.isConfigured || book.remoteOwnerId == null || book.remoteOwnerId != auth.accountId) return@withContext
-        val remoteId = book.remoteBookId ?: return@withContext
-        api.deleteBook(remoteId)
+    suspend fun flushPendingDeletions() = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
+        val owner = auth.accountId ?: return@withContext
+        if (!api.isConfigured) return@withContext
+        val session = auth.requestSession()
+        BookMutations.mutex.withLock {
+            for (pending in bookDao.pendingDeletions(owner)) {
+                auth.requireSession(session)
+                try {
+                    val remoteId = pending.remoteId ?: api.listBooks()
+                        .firstOrNull { it.clientBookId == pending.localId }?.id ?: continue
+                    auth.requireSession(session)
+                    // A successful later download supersedes the old deletion intent.
+                    val replacement = bookDao.getBookByRemoteId(remoteId)
+                    if (replacement?.remoteOwnerId != owner) {
+                        try { api.deleteBook(remoteId) }
+                        catch (failure: com.yishenghuang.heartext.network.ApiHttpException) {
+                            if (failure.code != 404) throw failure
+                        }
+                        auth.requireSession(session)
+                    }
+                    bookDao.acknowledgeDeletion(owner, pending.localId)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Keep the durable intent for the next login sync or deletion attempt. */ }
+            }
+        }
     }
+
 }

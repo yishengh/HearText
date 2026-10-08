@@ -33,6 +33,68 @@ class CloudSyncTest {
     }
     @After fun tearDown() { db.close() }
 
+    @Test fun deletionSurvivesFailureAndOnlyOriginalAccountCanRetry() = runBlocking {
+        val owned = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a")
+        db.bookDao().upsert(owned)
+        db.bookDao().removeAndQueueDeletion(book.id)
+        assertNull(db.bookDao().getBook(book.id))
+        server.enqueue(MockResponse().setResponseCode(503))
+        sync.flushPendingDeletions()
+        assertEquals(1, db.bookDao().pendingDeletions("account-a").size)
+        auth.sessionKey = "account-b"
+        sync.flushPendingDeletions()
+        assertEquals(1, server.requestCount)
+        auth.sessionKey = "account-a"
+        server.enqueue(MockResponse().setResponseCode(404))
+        sync.flushPendingDeletions()
+        assertTrue(db.bookDao().pendingDeletions("account-a").isEmpty())
+        assertEquals(2, server.requestCount)
+        repeat(2) { assertEquals("DELETE", server.takeRequest().method) }
+    }
+
+    @Test fun registrationFinishesBeforeDeletionAndLostRegistrationCanBeResolved() = runBlocking {
+        db.bookDao().upsert(book)
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody(remote).setBodyDelay(250, TimeUnit.MILLISECONDS))
+        server.enqueue(MockResponse().setResponseCode(503))
+        val registration = async { sync.ensureRemoteBook(book) }
+        withContext(Dispatchers.IO) {
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+            assertEquals("POST", server.takeRequest(5, TimeUnit.SECONDS)!!.method)
+        }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = BookRepository(context, db.bookDao(), CoverStore(context), sync, db.annotationDao())
+        val deletion = async { repo.deleteBook(book.id) }
+        registration.await()
+        deletion.await()
+        assertNull(db.bookDao().getBook(book.id))
+        assertEquals("remote", db.bookDao().pendingDeletions("account-a").single().remoteId)
+        server.enqueue(MockResponse().setResponseCode(204))
+        sync.flushPendingDeletions()
+        // Simulate process loss after POST began, before its response was bound locally.
+        db.bookDao().upsert(book.copy(remoteOwnerId = "account-a"))
+        db.bookDao().removeAndQueueDeletion(book.id)
+        server.enqueue(MockResponse().setBody("[]"))
+        sync.flushPendingDeletions()
+        assertEquals(1, db.bookDao().pendingDeletions("account-a").size)
+        server.enqueue(MockResponse().setBody("[$remote]"))
+        server.enqueue(MockResponse().setResponseCode(204))
+        sync.flushPendingDeletions()
+        assertTrue(db.bookDao().pendingDeletions("account-a").isEmpty())
+        assertEquals(7, server.requestCount)
+    }
+
+    @Test fun laterShelfReplacementSupersedesPendingDeletion() = runBlocking {
+        val owned = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a")
+        db.bookDao().upsert(owned)
+        db.bookDao().removeAndQueueDeletion(book.id)
+        db.bookDao().upsert(owned.copy(id = "replacement"))
+        sync.flushPendingDeletions()
+        assertEquals(0, server.requestCount)
+        assertTrue(db.bookDao().pendingDeletions("account-a").isEmpty())
+        assertNotNull(db.bookDao().getBook("replacement"))
+    }
+
     @Test fun concurrentProgressPushesSendLatestLocatorOnceAndPullRestoresIt() = runBlocking {
         val local = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a",
             lastChapterIndex = 2, lastOffset = 4, progressPercent = 40f, progressUpdatedAt = 5000,
@@ -106,7 +168,8 @@ class CloudSyncTest {
         db.bookDao().upsert(owned)
         auth.sessionKey = "account-b"
         sync.pushProgress(owned)
-        sync.deleteRemoteBook(owned)
+        db.bookDao().queueDeletion(PendingBookDeletion("account-a", book.id, "remote"))
+        sync.flushPendingDeletions()
         assertEquals(0, server.requestCount)
         db.bookDao().mergeRemoteProgress(book.id, "account-b", 0, 1, 1f, 6000)
         db.bookDao().mergeRemoteProgress(book.id, "account-a", 0, 2, 2f, 4000)

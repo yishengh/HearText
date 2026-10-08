@@ -69,6 +69,7 @@ class CatalogRepository(
         api.getCatalogPreview(catalogId)
     }
 
+
     private val downloads = Mutex()
 
     /** Validate a separate file before shelving; commit local metadata without resetting user data. */
@@ -88,39 +89,42 @@ class CatalogRepository(
                     val parsed = EpubParser.parse(dest)
                     currentCoroutineContext().ensureActive()
                     auth.requireSession(session)
-                    val shelf = api.addCatalogToShelf(catalog.id)
-                    auth.requireSession(session)
-                    val localId = shelf.book.clientBookId?.takeIf { it.isNotBlank() }
-                        ?: "catalog_${catalog.id}"
-                    val previous = bookDao.getBookByRemoteId(shelf.book.id)
-                        ?: bookDao.getBook(localId)
-                    val author = shelf.book.author ?: catalog.author.orEmpty()
-                    val remoteCover = shelf.book.coverUrl?.takeIf { it.isNotBlank() }
-                        ?: catalog.coverUrl?.takeIf { it.isNotBlank() }
-                    val cover = coverStore.resolve(fileId, shelf.book.title, author,
-                        remoteUrl = remoteCover, epubBytes = parsed.coverBytes)
-                    coverPath = cover.first
-                    val download = BookEntity(
-                        id = localId, title = shelf.book.title, author = author,
-                        format = BookFormat.EPUB, filePath = dest.absolutePath,
-                        coverPath = cover.first, coverSource = cover.second, coverUrl = remoteCover,
-                        remoteBookId = shelf.book.id, remoteOwnerId = owner,
-                        catalogBookId = catalog.id, description = catalog.description,
-                        totalChapters = parsed.chapters.size, source = BookSource.CATALOG
-                    )
-                    currentCoroutineContext().ensureActive()
-                    auth.requireSession(session)
-                    // Once the transaction starts, finish its bookkeeping even if the screen closes.
-                    withContext(NonCancellable) {
-                        val saved = bookDao.saveCatalogDownload(download)
-                        retained = true
-                        if (saved.coverPath != coverPath) { File(requireNotNull(coverPath)).delete(); coverPath = null }
-                        runCatching { previous?.filePath?.let { oldPath ->
-                            val old = File(oldPath)
-                            if (old.canonicalFile.parentFile == catalogDir.canonicalFile &&
-                                oldPath != saved.filePath && bookDao.countFileReferences(oldPath) == 0) old.delete()
-                        } }
-                        saved
+                    BookMutations.mutex.withLock {
+                        auth.requireSession(session)
+                        val shelf = api.addCatalogToShelf(catalog.id)
+                        auth.requireSession(session)
+                        val localId = shelf.book.clientBookId?.takeIf { it.isNotBlank() }
+                            ?: "catalog_${catalog.id}"
+                        val previous = bookDao.getBookByRemoteId(shelf.book.id)
+                            ?: bookDao.getBook(localId)
+                        val author = shelf.book.author ?: catalog.author.orEmpty()
+                        val remoteCover = shelf.book.coverUrl?.takeIf { it.isNotBlank() }
+                            ?: catalog.coverUrl?.takeIf { it.isNotBlank() }
+                        val cover = coverStore.resolve(fileId, shelf.book.title, author,
+                            remoteUrl = remoteCover, epubBytes = parsed.coverBytes)
+                        coverPath = cover.first
+                        val download = BookEntity(
+                            id = localId, title = shelf.book.title, author = author,
+                            format = BookFormat.EPUB, filePath = dest.absolutePath,
+                            coverPath = cover.first, coverSource = cover.second, coverUrl = remoteCover,
+                            remoteBookId = shelf.book.id, remoteOwnerId = owner,
+                            catalogBookId = catalog.id, description = catalog.description,
+                            totalChapters = parsed.chapters.size, source = BookSource.CATALOG
+                        )
+                        currentCoroutineContext().ensureActive()
+                        auth.requireSession(session)
+                        // Once the transaction starts, finish its bookkeeping even if the screen closes.
+                        withContext(NonCancellable) {
+                            val saved = bookDao.saveCatalogDownload(download)
+                            retained = true
+                            if (saved.coverPath != coverPath) { File(requireNotNull(coverPath)).delete(); coverPath = null }
+                            runCatching { previous?.filePath?.let { oldPath ->
+                                val old = File(oldPath)
+                                if (old.canonicalFile.parentFile == catalogDir.canonicalFile &&
+                                    oldPath != saved.filePath && bookDao.countFileReferences(oldPath) == 0) old.delete()
+                            } }
+                            saved
+                        }
                     }
                 } finally {
                     if (!retained) {
