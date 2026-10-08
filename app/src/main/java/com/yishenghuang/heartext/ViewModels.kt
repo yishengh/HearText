@@ -492,7 +492,13 @@ class ReaderViewModel(
         if (chapters.isNotEmpty()) {
             _chapterIndex.value = chapterIndex.coerceIn(0, chapters.lastIndex)
         }
-        textPosition = characterOffset?.takeIf { it >= 0 }?.let {
+        val playback = playbackCoordinator.session.value
+        val spoken = playback.spokenStart.takeIf {
+            playback.active && playback.bookId == bookId && playback.chapterIndex == chapterIndex &&
+                playback.playbackState != TtsPlaybackState.Idle &&
+                pageCharRangeProvider?.invoke()?.contains(it) == true
+        }
+        textPosition = (spoken ?: characterOffset)?.takeIf { it >= 0 }?.let {
             com.yishenghuang.heartext.data.TextPosition(chapterIndex, it)
         }
         lastKnownOffset = pageInChapter.coerceAtLeast(0)

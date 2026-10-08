@@ -28,6 +28,8 @@ data class TtsSentence(
     val end: Int
 )
 
+internal data class SpokenPosition(val generation: Int, val start: Int, val end: Int)
+
 class TtsController(
     private val app: android.app.Application,
     private val scope: CoroutineScope,
@@ -47,6 +49,9 @@ class TtsController(
 
     private val _sentenceCount = MutableStateFlow(0)
     val sentenceCount: StateFlow<Int> = _sentenceCount.asStateFlow()
+
+    private val _position = MutableStateFlow<SpokenPosition?>(null)
+    internal val position = _position.asStateFlow()
 
     private val _spokenStart = MutableStateFlow(0)
     val spokenStart: StateFlow<Int> = _spokenStart.asStateFlow()
@@ -282,6 +287,7 @@ class TtsController(
         _sentenceIndex.value = index
         _spokenStart.value = sentence.start
         _spokenEnd.value = sentence.end
+        _position.value = SpokenPosition(playGeneration.get(), sentence.start, sentence.end)
     }
 
     private suspend fun awaitEngineOrPause(engine: TtsEngine) {

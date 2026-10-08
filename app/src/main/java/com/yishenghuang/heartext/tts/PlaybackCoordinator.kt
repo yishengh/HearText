@@ -5,11 +5,11 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.yishenghuang.heartext.data.TextPosition
 import com.yishenghuang.heartext.data.BookFormat
 import com.yishenghuang.heartext.data.BookRepository
 import com.yishenghuang.heartext.data.EpubChapter
@@ -117,15 +117,15 @@ class PlaybackCoordinator(
                 }
             }
             launch {
-                tts.spokenStart.collectLatest { start ->
-                    _session.update { cur -> if (!cur.active) cur else cur.copy(spokenStart = start) }
+                tts.position.collectLatest { position ->
+                    val current = _session.value
+                    if (position != null && current.active && tts.isCurrentGeneration(position.generation)) {
+                        _session.value = current.copy(spokenStart = position.start, spokenEnd = position.end)
+                        persistProgress(current.bookId, current.chapterIndex, character = position.start)
+                    }
                 }
             }
-            launch {
-                tts.spokenEnd.collectLatest { end ->
-                    _session.update { cur -> if (!cur.active) cur else cur.copy(spokenEnd = end) }
-                }
-            }
+
         }
     }
 
@@ -135,7 +135,7 @@ class PlaybackCoordinator(
         mode: TtsMode,
         voiceId: String?,
         voiceLabel: String = voiceLabelFor(mode),
-        startSentenceIndex: Int = 0
+        startSentenceIndex: Int? = null
     ) {
         loadJob?.cancel()
         loadJob = scope.launch {
@@ -184,15 +184,16 @@ class PlaybackCoordinator(
                 message = null
             )
             ensureService()
-            tts.play(chapter.plainText, startSentenceIndex)
-            persistProgress(bookId, index)
+            val restored = TextPosition.decode(book.locatorJson)?.takeIf { it.chapter == index }
+            val sentence = startSentenceIndex ?: TtsController.sentenceIndexForOffset(chapter.plainText, restored?.character ?: 0)
+            tts.play(chapter.plainText, sentence)
         }
     }
 
     fun startFromPreferences(
         bookId: String,
         chapterIndex: Int,
-        startSentenceIndex: Int = 0
+        startSentenceIndex: Int? = null
     ) {
         val settings = readerPreferences.settings.value
         val mode = when (settings.ttsVoiceSource) {
@@ -235,6 +236,7 @@ class PlaybackCoordinator(
         when (s.playbackState) {
             TtsPlaybackState.Speaking -> {
                 resumeAfterTransientLoss = false
+                persistCurrentSentence()
                 tts.pause()
             }
             TtsPlaybackState.Paused -> {
@@ -254,11 +256,13 @@ class PlaybackCoordinator(
 
     fun pause() {
         if (!_session.value.active) return
+        persistCurrentSentence()
         resumeAfterTransientLoss = false
         tts.pause()
     }
 
     fun stop() {
+        persistCurrentSentence()
         loadJob?.cancel()
         resumeAfterTransientLoss = false
         ducked = false
@@ -299,7 +303,7 @@ class PlaybackCoordinator(
                 spokenEnd = 0
             )
         }
-        persistProgress(s.bookId, coerced)
+        persistProgress(s.bookId, coerced, character = 0)
         if (autoPlay) {
             if (!focusHelper.requestFocus()) return
             tts.setVolume(1f)
@@ -355,7 +359,7 @@ class PlaybackCoordinator(
 
     /**
      * Bind a [MediaController] so Media3 posts the media notification / lock-screen controls.
-     * Also starts the FGS explicitly for Android 12+ reliability.
+     * Media3 promotes the bound service when playback actually requires foreground execution.
      */
     private fun ensureService() {
         if (serviceStarted) {
@@ -363,8 +367,6 @@ class PlaybackCoordinator(
             return
         }
         serviceStarted = true
-        val intent = Intent(app, HearTextPlaybackService::class.java)
-        ContextCompat.startForegroundService(app, intent)
         connectMediaController()
     }
 
@@ -403,8 +405,17 @@ class PlaybackCoordinator(
         serviceStarted = false
     }
 
-    private fun persistProgress(bookId: String, chapterIndex: Int, completed: Boolean = false) {
+    private fun persistCurrentSentence() {
+        val current = _session.value
+        if (current.active && tts.state.value != TtsPlaybackState.Idle) {
+            persistProgress(current.bookId, current.chapterIndex, character = tts.spokenStart.value)
+        }
+    }
+
+    private fun persistProgress(bookId: String, chapterIndex: Int, completed: Boolean = false, character: Int? = null) {
         val total = chapters.size.coerceAtLeast(1)
+        val timestamp = bookRepository.captureProgressTimestamp()
+        val locator = character?.let { TextPosition(chapterIndex, it).encode() }
         scope.launch {
             val book = bookRepository.getBook(bookId) ?: return@launch
             val sameChapter = book.lastChapterIndex == chapterIndex
@@ -415,7 +426,9 @@ class PlaybackCoordinator(
                     bookId = bookId,
                     chapterIndex = chapterIndex,
                     offset = if (sameChapter) book.lastOffset else 0,
-                    progressPercent = resolvedPercent
+                    progressPercent = resolvedPercent,
+                    locatorJson = locator,
+                    updatedAt = timestamp
                 )
             }
         }

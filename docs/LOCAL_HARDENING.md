@@ -301,3 +301,13 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试让 12 个并发调用携带旧快照，验证实际只发送一次数据库中的最新页码和字符位置；清除本地 locator 后模拟 GET 验证恢复。另测 503 后再次提交成功、本地位置不丢失。
 - 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m9s）：Debug、Lint、52 项 JVM、43 项设备测试，0 failures / 0 skipped。日志：build/local-validation/progress-sync-verification.log。
 - 合并与成功去重状态仅在当前进程内；持久数据仍由 Room 保留并通过已有登录同步重试，不新增后台常驻任务。PDF locator 传输已实现，但本轮新增往返测试针对文字；真实后端写入未执行。既定 PDF 容器恢复、听书句内位置、书籍删除重试和体验审查仍待完成。
+
+
+### 第二十七轮：听书语句位置与前台服务启动
+
+- TtsController 原子发布携带播放代次的语句字符范围；协调器只接受当前代次，为当前语句保存文字 locator。暂停和停止前保存位置，进度事件在异步数据库操作前捕获单调时间戳，避免迟到保存覆盖后来位置。
+- 播放器默认启动从数据库字符位置映射到语句；阅读器明确“从当前页开始”仍传入指定语句。阅读跟随朗读翻页时，如语句位于当前页则保留语句偏移而非页首。这里恢复到当前语句/长句片段开头，不声称逐音素或字内无缝续播。
+- 新设备测试使用应用的实际协调器、系统语音和媒体服务，指定第三句开始，暂停后检查 Room locator，停止并使用默认启动，验证回到第三句。首轮复现 ForegroundServiceDidNotStartInTimeException：显式 startForegroundService 后立即暂停，Media3 未需要前台执行，系统启动要求未及时满足。
+- 移除额外的显式前台服务启动，保留 MediaController 绑定，让 Media3 按实际播放状态管理前台生命周期，符合 [MediaSessionService 后台播放文档](https://developer.android.com/media/media3/session/background-playback)。原失败测试随后通过。该结果不是对所有系统后台限制、通知操作或锁屏硬件按钮的完整验证。
+- 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m4s）：Debug、Lint、52 项 JVM、44 项设备测试，0 failures / 0 skipped。日志：build/local-validation/spoken-position-service.log。首轮崩溃记录保留在 spoken-position-verification.log，不计作通过。
+- 仍需验证完整后台/锁屏媒体流程及系统杀进程恢复；既定 PDF 容器、书籍删除重试和体验审查继续推进。未发布、推送或执行生产写入。
