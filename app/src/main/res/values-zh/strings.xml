@@ -326,4 +326,6 @@
     <string name="sync_now">立即同步</string>
     <string name="delete_remote_pending">已从此设备移除。云端删除仍待完成，请在设置中重试云同步。</string>
     <string name="error_overview_load">无法加载此书籍。</string>
+    <string name="error_library_load">无法加载书库，请重试。</string>
+    <string name="error_bookmark_save">无法保存书签更改，请重试。</string>
 </resources>

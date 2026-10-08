@@ -121,6 +121,7 @@ fun ReaderScreen(
     val ttsState by viewModel.ttsState.collectAsStateWithLifecycle()
     val ttsMessage by viewModel.ttsMessage.collectAsStateWithLifecycle()
     val bookmarkToast by viewModel.bookmarkToast.collectAsStateWithLifecycle()
+    val bookmarkBusy by viewModel.bookmarkBusy.collectAsStateWithLifecycle()
     val playbackSession by viewModel.playbackSession.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -278,6 +279,7 @@ fun ReaderScreen(
                     onAddBookmark = { viewModel.addBookmark(pageIndex) },
                     onOpenBookmarks = { viewModel.openBookmarks(true) },
                     isCurrentPageBookmarked = isCurrentPageBookmarked,
+                    bookmarkEnabled = !bookmarkBusy,
                     onOpenToc = { viewModel.openToc(true) },
                     onOpenSettings = { viewModel.openSettings(true) },
                     onToggleMenu = { menuVisible = !menuVisible },

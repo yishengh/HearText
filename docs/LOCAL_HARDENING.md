@@ -361,3 +361,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新实际 Compose 详情页设备测试模拟观察失败，点击重试后确认缺失提示，再插入及删除书籍确认界面更新并点击返回。云删除竞争测试新增断言 REMOTE_PENDING 结果，既有持久待办验证保留。
 - 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m21s）：Debug、Lint、54 项 JVM、53 项设备测试，0 failures / 0 skipped。日志：build/local-validation/overview-delete-verification.log。
 - 本轮不等同于真实账号删除操作的人工 UI 验证；所有网络测试仍是本地模拟。阅读器错误正文、书签失败处理及其余既定体验审查继续推进，未发布、推送或执行生产写入。
+
+### 第三十四轮：书签失败恢复与阅读错误提示
+
+- 阅读书签操作在发起前设置忙碌状态，期间重复点击被拒绝；读取页面尚未就绪时不创建书签。失败恢复按钮并使用四语言提示，成功仍显示添加/移除反馈，取消继续传播。避免连续点击并发创建重复书签或反向切换。
+- 阅读器无效文本/PDF 打开及书库示例初始化的相关错误改为资源文案，不直接显示异常正文；明确重抛取消异常，不把页面关闭误报成加载失败。
+- 阅读工具栏书签按钮绑定忙碌状态；ChromeIconButton 增加按钮角色、禁用语义及 48dp 点击区域。此改动不是正文 TalkBack 或整个应用无障碍已完成的证明。
+- 新设备测试让书签查询抛出包含私有信息的异常，验证本地化错误和无残留；恢复后连续 20 次点击只生成一条，下一次点击可正常移除。另用无效二进制 TXT 验证阅读错误不含文件路径、未就绪时不保存书签。
+- 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m11s）：Debug、Lint、54 项 JVM、55 项设备测试，0 failures / 0 skipped。日志：build/local-validation/reader-bookmark-verification.log。原有实际阅读、书签跳转及重建测试同时通过。
+- 仍需检查正文辅助功能、其他既定错误/多语言路径和存储清理边界；真实账号及物理音频设备限制保持如前。未发布、推送或生产写入。

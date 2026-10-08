@@ -106,6 +106,7 @@ fun ReaderImmersiveChrome(
     onAddBookmark: () -> Unit = {},
     onOpenBookmarks: () -> Unit = {},
     isCurrentPageBookmarked: Boolean = false,
+    bookmarkEnabled: Boolean = true,
     onOpenToc: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleMenu: () -> Unit,
@@ -169,7 +170,8 @@ fun ReaderImmersiveChrome(
                 onBack = onBack,
                 onSearch = onOpenSearch,
                 onAddBookmark = onAddBookmark,
-                isCurrentPageBookmarked = isCurrentPageBookmarked
+                isCurrentPageBookmarked = isCurrentPageBookmarked,
+                bookmarkEnabled = bookmarkEnabled
             )
         }
 
@@ -546,7 +548,8 @@ private fun ReaderTopChrome(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onAddBookmark: () -> Unit,
-    isCurrentPageBookmarked: Boolean
+    isCurrentPageBookmarked: Boolean,
+    bookmarkEnabled: Boolean
 ) {
     val safeTop = rememberReaderSafeTop()
     val controlBg = if (fg == Color.White) {
@@ -602,7 +605,7 @@ private fun ReaderTopChrome(
                 } else {
                     stringResource(R.string.reader_add_bookmark)
                 }
-                ChromeIconButton(bookmarkIcon, bookmarkDesc, bookmarkTint, controlBg, onAddBookmark)
+                ChromeIconButton(bookmarkIcon, bookmarkDesc, bookmarkTint, controlBg, onAddBookmark, bookmarkEnabled)
             }
         }
     }
@@ -614,21 +617,24 @@ private fun ChromeIconButton(
     desc: String,
     tint: Color,
     background: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(background)
             .clickable(
+                enabled = enabled,
+                role = androidx.compose.ui.semantics.Role.Button,
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick
             ),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, desc, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(icon, desc, tint = if (enabled) tint else tint.copy(alpha = 0.3f), modifier = Modifier.size(18.dp))
     }
 }
 

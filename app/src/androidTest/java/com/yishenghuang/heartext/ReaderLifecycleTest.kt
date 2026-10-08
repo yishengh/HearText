@@ -66,6 +66,54 @@ class ReaderLifecycleTest {
         return file
     }
 
+    @Test fun bookmarkFailureClearsBusyAndRapidRetryCreatesOnlyOneBookmark() = runBlocking {
+        val file = File(root, "bookmark.txt").apply { writeText("A local reading fixture.") }
+        db.bookDao().upsert(BookEntity("bookmark", "Title", "Author", BookFormat.TXT, file.path))
+        val dao = db.annotationDao()
+        var fail = true
+        val release = CompletableDeferred<Unit>()
+        val intercepted = object : AnnotationDao by dao {
+            override suspend fun listForBook(bookId: String): List<AnnotationEntity> {
+                if (fail) throw java.io.IOException("private document path")
+                release.await()
+                return dao.listForBook(bookId)
+            }
+        }
+        val auth = object : SessionTokenProvider {
+            override val isSignedIn = false
+            override val sessionKey: String? = null
+            override suspend fun getToken(forceRefresh: Boolean): String = error("No network")
+        }
+        annotations = AnnotationRepository(intercepted, HearTextApi(auth), auth, db.bookDao())
+        val vm = reader("bookmark")
+        withTimeout(5000) { vm.sessionReady.first { it } }
+        withContext(Dispatchers.Main) { repeat(20) { vm.addBookmark(0) } }
+        withTimeout(5000) { vm.bookmarkBusy.first { !it } }
+        assertEquals(app.getString(R.string.error_bookmark_save), vm.bookmarkToast.value)
+        assertTrue(dao.listForBook("bookmark").isEmpty())
+        fail = false
+        withContext(Dispatchers.Main) { repeat(20) { vm.addBookmark(0) } }
+        assertTrue(vm.bookmarkBusy.value)
+        release.complete(Unit)
+        withTimeout(5000) { vm.bookmarkBusy.first { !it } }
+        assertEquals(1, dao.listForBook("bookmark").size)
+        assertEquals(app.getString(R.string.toast_bookmark_added), vm.bookmarkToast.value)
+        withContext(Dispatchers.Main) { vm.addBookmark(0) }
+        withTimeout(5000) { vm.bookmarkBusy.first { !it } }
+        assertTrue(dao.listForBook("bookmark").isEmpty())
+    }
+
+    @Test fun invalidTextReportsLocalizedErrorWithoutUnderlyingPath() = runBlocking {
+        val file = File(root, "private-title.txt").apply { writeBytes(byteArrayOf(0, 1, 2, 3)) }
+        db.bookDao().upsert(BookEntity("invalid", "Private title", "Author", BookFormat.TXT, file.path))
+        val vm = reader("invalid")
+        withTimeout(5000) { vm.loading.first { !it } }
+        assertEquals(app.getString(R.string.error_load_chapters), vm.error.value)
+        assertFalse(vm.sessionReady.value)
+        withContext(Dispatchers.Main) { vm.addBookmark(0) }
+        assertTrue(db.annotationDao().listForBook("invalid").isEmpty())
+    }
+
     @Test fun queuedPageEventsSurviveImmediateViewModelClearAndKeepNewestPosition() = runBlocking {
         val file = File(root, "fixture.txt").apply { writeText("Chapter 1\n" + "Local reader content. ".repeat(100)) }
         db.bookDao().upsert(BookEntity("text", "Title", "Author", BookFormat.TXT, file.path))

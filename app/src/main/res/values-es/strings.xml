@@ -326,4 +326,6 @@
     <string name="sync_now">Sincronizar ahora</string>
     <string name="delete_remote_pending">Eliminado de este dispositivo. La eliminación en la nube está pendiente; reintenta la sincronización en Ajustes.</string>
     <string name="error_overview_load">No se pudo cargar este libro.</string>
+    <string name="error_library_load">No se pudo cargar la biblioteca. Inténtalo de nuevo.</string>
+    <string name="error_bookmark_save">No se pudo guardar el cambio del marcador. Inténtalo de nuevo.</string>
 </resources>

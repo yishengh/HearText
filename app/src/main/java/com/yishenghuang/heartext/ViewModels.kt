@@ -46,7 +46,10 @@ class LibraryViewModel(
     init {
         viewModelScope.launch {
             runCatching { bookRepository.ensureSampleBooks() }
-                .onFailure { _error.value = it.message }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    _error.value = app.getString(R.string.error_library_load)
+                }
         }
     }
 
@@ -269,7 +272,8 @@ class ReaderViewModel(
                             _sessionReady.value = true
                         }
                         .onFailure {
-                            _error.value = it.message ?: app.getString(R.string.error_load_chapters)
+                            if (it is kotlinx.coroutines.CancellationException) throw it
+                            _error.value = app.getString(R.string.error_load_chapters)
                         }
                     _loading.value = false
                 }
@@ -283,7 +287,8 @@ class ReaderViewModel(
                             _loading.value = false
                         }
                         .onFailure {
-                            _error.value = it.message ?: app.getString(R.string.error_open_readium)
+                            if (it is kotlinx.coroutines.CancellationException) throw it
+                            _error.value = app.getString(R.string.error_open_readium)
                             _loading.value = false
                         }
                 }
@@ -308,26 +313,37 @@ class ReaderViewModel(
         }
     }
 
+    private val _bookmarkBusy = MutableStateFlow(false)
+    val bookmarkBusy = _bookmarkBusy.asStateFlow()
+
     fun addBookmark(pageIndex: Int = 0) {
+        if (_bookmarkBusy.value || !_sessionReady.value) return
         val chapter = _chapterIndex.value
         val range = pageCharRangeProvider?.invoke()
+        _bookmarkBusy.value = true
+        _bookmarkToast.value = null
         viewModelScope.launch {
-            val entity = bookRepository.getBook(bookId)
-            val page = pageIndex.coerceAtLeast(0)
-            val existing = annotationRepository.findBookmark(bookId, chapter, page, range)
-            if (existing != null) {
-                annotationRepository.delete(existing)
-                _bookmarkToast.value = app.getString(R.string.toast_bookmark_removed)
-            } else {
-                annotationRepository.addBookmark(
-                    bookId = bookId,
-                    remoteBookId = entity?.remoteBookId,
-                    chapterIndex = chapter,
-                    pageIndex = page,
-                    characterOffset = range?.first
-                )
-                _bookmarkToast.value = app.getString(R.string.toast_bookmark_added)
-            }
+            try {
+                val entity = bookRepository.getBook(bookId)
+                if (entity == null) {
+                    _bookmarkToast.value = app.getString(R.string.error_book_not_found)
+                    return@launch
+                }
+                val page = pageIndex.coerceAtLeast(0)
+                val existing = annotationRepository.findBookmark(bookId, chapter, page, range)
+                if (existing != null) {
+                    annotationRepository.delete(existing)
+                    _bookmarkToast.value = app.getString(R.string.toast_bookmark_removed)
+                } else {
+                    annotationRepository.addBookmark(
+                        bookId = bookId, remoteBookId = entity.remoteBookId,
+                        chapterIndex = chapter, pageIndex = page, characterOffset = range?.first
+                    )
+                    _bookmarkToast.value = app.getString(R.string.toast_bookmark_added)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { _bookmarkToast.value = app.getString(R.string.error_bookmark_save) }
+            finally { _bookmarkBusy.value = false }
         }
     }
 
