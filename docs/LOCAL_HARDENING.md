@@ -158,3 +158,10 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 依据本地已安装 Clerk Android 1.0.10 AAR 的公开签名核对 sessionFlow、initializationError、reinitialize 和注册邮箱字段；不升级 SDK，不执行真实注册、登录或删除账号写入测试。
 - 新增模拟 ViewModel/协程测试覆盖已有会话启动、换号/退出取消、资料变更不重复同步、退出失败、初始化错误、表单异常恢复、重复提交、取消、未完成验证、离线模式抑制同步及 token 等待失败/超时。真实 Clerk 测试实例凭据尚未提供，SDK 与服务端完整认证链路仍未实测。
 - 最终完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（59s）：Debug 构建、Lint、45 项 JVM、29 项设备测试，0 failures / 0 skipped。新增 coroutines-test 使用项目现有协程版本 1.10.2，仅测试依赖。
+
+### 第十一轮：系统备份边界
+
+- 默认备份模板没有排除私有数据。现将 allowBackup 关闭，并在旧版 full-backup-content、Android 12+ 的 cloud-backup/device-transfer 中显式排除全部凭据保护及设备保护的 root/file/database/sharedpref 域与 external 域，覆盖账号状态、正文、批注、离线模型和待同步状态。
+- 依据 [Android Auto Backup 官方文档](https://developer.android.com/identity/data/autobackup)：默认包含多数应用文件，部分设备的 D2D 不完全依赖 allowBackup，因此同时配置设备迁移排除项。应用已有的账号云同步不受这些系统规则影响；本地导入文件不会通过系统备份恢复，卸载/清除应用数据前需要保留原文件。
+- 设备测试检查实际安装包的 ApplicationInfo 标志和编译后的两套 XML 规则。未触发真实云备份，未执行跨设备迁移；不同厂商迁移实现的实际遵守情况未验证，不能把规则检查当作所有 OEM 的端到端迁移测试。
+- 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（52s）：Debug、Lint、45 项 JVM、30 项设备测试，0 failures / 0 skipped。
