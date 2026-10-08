@@ -368,16 +368,17 @@ class BookRepository(
     }
 
     suspend fun syncOnLogin() {
-        try {
-            cloudSync?.pushAllLocalBooks()
-            cloudSync?.pullAndMergeProgress()
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // Leave failed books available for a subsequent sync.
+        var incomplete = false
+        suspend fun attempt(action: suspend () -> Unit) {
+            try { action() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { incomplete = true }
         }
-        annotationRepository?.syncAll()
-        ensureMissingCovers()
+        attempt { cloudSync?.pushAllLocalBooks() }
+        attempt { cloudSync?.pullAndMergeProgress() }
+        attempt { annotationRepository?.syncAll() }
+        attempt { ensureMissingCovers() }
+        if (incomplete) throw SyncIncompleteException()
     }
 
     private val chapterCache = ChapterCache()

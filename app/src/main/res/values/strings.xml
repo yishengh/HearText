@@ -317,4 +317,11 @@
     <string name="error_save_progress">Unable to save your reading position. Check available storage and try again.</string>
     <string name="error_cover_save">Could not save this cover. Try another image.</string>
     <string name="reader_saved_text_position">Saved text position</string>
+    <string name="sync_title">Cloud sync</string>
+    <string name="sync_ready">Ready to sync.</string>
+    <string name="sync_running">Syncing…</string>
+    <string name="sync_complete">Last sync completed.</string>
+    <string name="sync_incomplete">Some changes are still waiting to sync. Local books remain available.</string>
+    <string name="sync_offline">Cloud sync is off in offline mode.</string>
+    <string name="sync_now">Sync now</string>
 </resources>

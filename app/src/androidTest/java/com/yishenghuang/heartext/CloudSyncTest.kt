@@ -33,6 +33,26 @@ class CloudSyncTest {
     }
     @After fun tearDown() { db.close() }
 
+    @Test fun aggregateSyncReportsPendingDeletionsAndStillAttemptsPull() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = BookRepository(context, db.bookDao(), CoverStore(context), sync)
+        db.bookDao().queueDeletion(PendingBookDeletion("account-a", "local", "remote"))
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        assertTrue(runCatching { repository.syncOnLogin() }.exceptionOrNull() is SyncIncompleteException)
+        assertEquals(3, server.requestCount)
+        assertEquals("DELETE", server.takeRequest().method)
+        assertEquals("/v1/books", server.takeRequest().path)
+        assertEquals("/v1/progress", server.takeRequest().path)
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        repository.syncOnLogin()
+        assertTrue(db.bookDao().pendingDeletions("account-a").isEmpty())
+        assertEquals(6, server.requestCount)
+    }
+
     @Test fun deletionSurvivesFailureAndOnlyOriginalAccountCanRetry() = runBlocking {
         val owned = book.copy(remoteBookId = "remote", remoteOwnerId = "account-a")
         db.bookDao().upsert(owned)

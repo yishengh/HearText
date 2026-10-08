@@ -21,11 +21,13 @@ class AnnotationRepository(
     private val syncLock = Mutex()
 
     suspend fun syncAll() {
+        var incomplete = false
         for (book in books.getAll()) {
             try { syncFromServer(book.id, book.remoteBookId) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* Other books can still sync. */ }
+            catch (_: Exception) { incomplete = true }
         }
+        if (incomplete) throw SyncIncompleteException()
     }
 
     suspend fun syncFromServer(bookId: String, remoteBookId: String?) =
@@ -62,6 +64,7 @@ class AnnotationRepository(
                         dao.markRemoteAbsent(local.id, owner, id, local.clientUpdatedAt)
                     }
                 }
+                var incomplete = false
                 for (local in dao.listIncludingDeleted(bookId)) {
                     auth.requireSession(session)
                     if (local.remoteOwnerId != null && local.remoteOwnerId != owner) continue
@@ -69,8 +72,9 @@ class AnnotationRepository(
                         if (local.deleted) deleteRemote(local, owner)
                         else if (local.remoteId == null) push(local, remoteId, owner)
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { /* Durable local state is retried on the next sync. */ }
+                    catch (_: Exception) { incomplete = true }
                 }
+                if (incomplete) throw SyncIncompleteException()
             }
         }
 

@@ -21,6 +21,8 @@ sealed interface AuthUiState {
     data object ConnectionFailed : AuthUiState
 }
 
+enum class SyncUiState { IDLE, RUNNING, COMPLETE, INCOMPLETE }
+
 class AuthViewModel(
     private val synchronize: suspend () -> Unit,
     private val source: AuthSessionSource = ClerkSessionSource,
@@ -44,10 +46,14 @@ class AuthViewModel(
     val message = _message.asStateFlow()
     private val _meLabel = MutableStateFlow<String?>(null)
     val meLabel = _meLabel.asStateFlow()
+    private val _syncState = MutableStateFlow(SyncUiState.IDLE)
+    val syncState = _syncState.asStateFlow()
+    private var syncAttempt = 0
     private var syncKey: String? = null
     private var syncJob: Job? = null
     private var signingOut = false
     private val syncAllowed = MutableStateFlow(syncEnabled)
+    val synchronizationEnabled = syncAllowed.asStateFlow()
 
     init {
         if (configured) viewModelScope.launch {
@@ -59,16 +65,37 @@ class AuthViewModel(
                     syncKey = key
                     syncJob?.cancel()
                     _message.value = null
-                    if (key != null) syncJob = viewModelScope.launch {
-                        try { synchronize() }
-                        catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) {
-                            if (syncKey == key) _message.value = R.string.auth_sync_failed
-                        }
-                    }
+                    syncAttempt++
+                    _syncState.value = SyncUiState.IDLE
+                    if (key != null) startSync(key)
                 }
             }
         }
+    }
+
+    private fun startSync(key: String) {
+        val attempt = ++syncAttempt
+        _syncState.value = SyncUiState.RUNNING
+        _message.value = null
+        syncJob = viewModelScope.launch {
+            try {
+                synchronize()
+                if (syncKey == key && syncAttempt == attempt) _syncState.value = SyncUiState.COMPLETE
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (syncKey == key && syncAttempt == attempt) {
+                    _syncState.value = SyncUiState.INCOMPLETE
+                    _message.value = R.string.auth_sync_failed
+                }
+            }
+        }
+    }
+
+    fun retrySync() {
+        val key = syncKey ?: return
+        if (!configured || !syncAllowed.value || signingOut || syncJob?.isActive == true) return
+        if (source.initial.key != key) return
+        startSync(key)
     }
 
     fun clearMessage() { _message.value = null }
@@ -84,6 +111,8 @@ class AuthViewModel(
             try {
                 source.signOut()
                 syncKey = null
+                syncAttempt++
+                _syncState.value = SyncUiState.IDLE
                 syncJob?.cancel()
                 _meLabel.value = null
                 _message.value = null

@@ -149,6 +149,8 @@ private fun MainNav(
     var pendingBookId by remember { mutableStateOf<String?>(null) }
     val hazeState = remember { HazeState() }
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val syncState by authViewModel.syncState.collectAsStateWithLifecycle()
+    val syncEnabled by authViewModel.synchronizationEnabled.collectAsStateWithLifecycle()
     val playbackSession by app.container.playbackCoordinator.session.collectAsStateWithLifecycle()
 
     val currentEntry by navController.currentBackStackEntryAsState()
@@ -286,6 +288,7 @@ private fun MainNav(
                 ProfileScreen(
                     viewModel = vm,
                     authSignedIn = authState is AuthUiState.SignedIn,
+                    syncState = syncState, syncEnabled = syncEnabled, onSync = authViewModel::retrySync,
                     onSignOut = { authViewModel.signOut() },
                     onRequestSignIn = onRequestSignIn,
                     onOpenListenSettings = {

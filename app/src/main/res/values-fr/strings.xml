@@ -317,4 +317,11 @@
     <string name="error_save_progress">Impossible de sauvegarder la position de lecture. Vérifiez l’espace disponible et réessayez.</string>
     <string name="error_cover_save">Impossible d’enregistrer cette couverture. Essayez une autre image.</string>
     <string name="reader_saved_text_position">Position du texte enregistrée</string>
+    <string name="sync_title">Synchronisation cloud</string>
+    <string name="sync_ready">Prêt à synchroniser.</string>
+    <string name="sync_running">Synchronisation…</string>
+    <string name="sync_complete">Dernière synchronisation terminée.</string>
+    <string name="sync_incomplete">Certaines modifications restent à synchroniser. Les livres locaux restent disponibles.</string>
+    <string name="sync_offline">La synchronisation cloud est désactivée en mode hors ligne.</string>
+    <string name="sync_now">Synchroniser</string>
 </resources>

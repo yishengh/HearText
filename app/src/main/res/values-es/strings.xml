@@ -317,4 +317,11 @@
     <string name="error_save_progress">No se pudo guardar la posición de lectura. Comprueba el espacio disponible e inténtalo de nuevo.</string>
     <string name="error_cover_save">No se pudo guardar esta portada. Prueba con otra imagen.</string>
     <string name="reader_saved_text_position">Posición de texto guardada</string>
+    <string name="sync_title">Sincronización en la nube</string>
+    <string name="sync_ready">Listo para sincronizar.</string>
+    <string name="sync_running">Sincronizando…</string>
+    <string name="sync_complete">Última sincronización completada.</string>
+    <string name="sync_incomplete">Algunos cambios siguen pendientes. Los libros locales siguen disponibles.</string>
+    <string name="sync_offline">La sincronización está desactivada en el modo sin conexión.</string>
+    <string name="sync_now">Sincronizar ahora</string>
 </resources>

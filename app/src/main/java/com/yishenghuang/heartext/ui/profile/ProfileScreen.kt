@@ -75,6 +75,9 @@ private val SettingsPageBg = Color(0xFFF2F2F7)
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     authSignedIn: Boolean,
+    syncState: com.yishenghuang.heartext.ui.auth.SyncUiState,
+    syncEnabled: Boolean,
+    onSync: () -> Unit,
     onSignOut: () -> Unit,
     onRequestSignIn: () -> Unit,
     onOpenListenSettings: () -> Unit,
@@ -151,6 +154,11 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        if (authSignedIn) {
+            SettingsCard { SyncStatusContent(syncState, syncEnabled, onSync) }
+            Spacer(Modifier.height(16.dp))
+        }
 
         SettingsCard {
             StatsStrip(stats)
@@ -459,5 +467,30 @@ private fun SettingsCard(content: @Composable () -> Unit) {
             .background(Color.White)
     ) {
         content()
+    }
+}
+
+@Composable
+internal fun SyncStatusContent(
+    state: com.yishenghuang.heartext.ui.auth.SyncUiState,
+    enabled: Boolean,
+    onSync: () -> Unit
+) {
+    val status = when {
+        !enabled -> R.string.sync_offline
+        state == com.yishenghuang.heartext.ui.auth.SyncUiState.RUNNING -> R.string.sync_running
+        state == com.yishenghuang.heartext.ui.auth.SyncUiState.COMPLETE -> R.string.sync_complete
+        state == com.yishenghuang.heartext.ui.auth.SyncUiState.INCOMPLETE -> R.string.sync_incomplete
+        else -> R.string.sync_ready
+    }
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Text(stringResource(R.string.sync_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(status), style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 8.dp))
+        TextButton(onClick = onSync,
+            enabled = enabled && state != com.yishenghuang.heartext.ui.auth.SyncUiState.RUNNING) {
+            Text(stringResource(if (state == com.yishenghuang.heartext.ui.auth.SyncUiState.INCOMPLETE)
+                R.string.action_retry else R.string.sync_now))
+        }
     }
 }

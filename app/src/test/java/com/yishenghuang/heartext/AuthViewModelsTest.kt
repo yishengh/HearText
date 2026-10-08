@@ -44,6 +44,46 @@ class AuthViewModelsTest {
         override suspend fun resendSignUp() { action() }
     }
 
+    @Test fun failedSyncCanRetryOnceAndOfflineModeDisablesRetry() = runTest {
+        val source = Sessions()
+        var calls = 0
+        val finish = CompletableDeferred<Unit>()
+        val vm = keep(AuthViewModel({
+            calls++
+            if (calls == 1) throw IOException("private server detail")
+            finish.await()
+        }, source, true))
+        runCurrent()
+        assertEquals(SyncUiState.INCOMPLETE, vm.syncState.value)
+        assertEquals(R.string.auth_sync_failed, vm.message.value)
+        vm.retrySync(); vm.retrySync(); runCurrent()
+        assertEquals(2, calls)
+        assertEquals(SyncUiState.RUNNING, vm.syncState.value)
+        finish.complete(Unit); runCurrent()
+        assertEquals(SyncUiState.COMPLETE, vm.syncState.value)
+        assertNull(vm.message.value)
+        vm.setSyncEnabled(false); runCurrent(); vm.retrySync(); runCurrent()
+        assertEquals(2, calls)
+        assertEquals(SyncUiState.IDLE, vm.syncState.value)
+    }
+
+    @Test fun cancelledOldSyncCannotPublishFailureForNewAccount() = runTest {
+        val source = Sessions()
+        val vm = keep(AuthViewModel({
+            if (source.initial.userId == "a") {
+                try { awaitCancellation() }
+                finally { withContext(NonCancellable) { delay(100); throw IOException("old account") } }
+            }
+        }, source, true))
+        runCurrent()
+        source.value.value = AuthSnapshot(true, "b", "session-b")
+        runCurrent()
+        assertEquals(SyncUiState.COMPLETE, vm.syncState.value)
+        advanceTimeBy(101); runCurrent()
+        assertEquals(SyncUiState.COMPLETE, vm.syncState.value)
+        assertNull(vm.message.value)
+    }
+
     @Test fun existingSessionSyncsOnceAndChangingSessionCancelsOldWork() = runTest {
         val source = Sessions()
         val started = mutableListOf<String?>()

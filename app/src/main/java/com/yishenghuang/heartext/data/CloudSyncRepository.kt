@@ -131,6 +131,7 @@ class CloudSyncRepository(
         if (!auth.isSignedIn || !api.isConfigured) return@withContext
         val session = auth.requestSession()
         flushPendingDeletions()
+        var incomplete = auth.accountId?.let { bookDao.pendingDeletions(it).isNotEmpty() } == true
         for (book in bookDao.getAll()) {
             auth.requireSession(session)
             try {
@@ -138,9 +139,10 @@ class CloudSyncRepository(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                // Other books may still sync; failed books remain available for the next retry.
+                incomplete = true
             }
         }
+        if (incomplete) throw SyncIncompleteException()
     }
 
     suspend fun flushPendingDeletions() = withContext(Dispatchers.IO + ExpectedSession(auth.requestSession())) {
