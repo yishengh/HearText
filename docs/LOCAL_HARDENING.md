@@ -263,3 +263,13 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试先写入残缺 EPUB，再启动八个并发初始化入口，验证只有一本可实际解析的示例、已有进度不被重置，以及删除后重复初始化不会恢复示例。
 - 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m8s）：Debug、Lint、52 项 JVM、38 项设备测试，0 failures / 0 skipped。日志：build/local-validation/sample-initialization.log。
 - 本轮关闭明确的半文件与初始化并发风险；此前示例可见性超时没有取得失败时数据库/初始化标记证据，尚不能证明就是由这两项造成。保留失败诊断并在后续完整回归继续观察；不以本次通过宣称已找到那次超时的根因。
+
+
+### 第二十三轮：封面输入与取消安全
+
+- 网络、用户选择和 EPUB 图片统一写入随机暂存文件，限制输入 16 MiB、单边 16384 像素及 4000 万总像素，检查可实际解码后才原子替换。验证按采样缩小解码，不为验证分配完整大图；失败和取消保留旧封面并清理暂存。
+- 网络封面通过既有 consumeCancellable 处理，取消覆盖等待响应头及读取响应体。取消异常继续向上传递，不再被 runCatching 转成普通失败。生成封面也使用原子提交并确保 Bitmap 回收。
+- 新文件名取书籍 ID 的 SHA-256，不将外部 ID 当作路径；旧数据库保存的封面路径仍可读取。修复标题哈希为 Int.MIN_VALUE 时生成封面颜色索引可能为负的问题。
+- 新设备测试用真实生成图片验证有效替换、无效/超限输入、目录穿越形式 ID、响应头及慢响应体取消，检查旧图字节不变且无暂存残留。
+- 完整 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m8s）：Debug、Lint、52 项 JVM、39 项设备测试，0 failures / 0 skipped。日志：build/local-validation/cover-verification.log。
+- 本轮针对输入、文件与网络安全；用户换图后的图片缓存失效、保存中删除书籍的时序及失败提示仍需结合现有封面 UI 完成，不由存储层测试推定通过。未发布或执行生产写入。

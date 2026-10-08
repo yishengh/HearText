@@ -1,6 +1,7 @@
 package com.yishenghuang.heartext.data
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -12,14 +13,20 @@ import android.net.Uri
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.yishenghuang.heartext.network.consumeCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
+import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 enum class CoverSource {
     /** Downloaded from backend / catalog `cover_url`. */
@@ -49,56 +56,94 @@ class CoverStore(private val context: Context) {
             .build()
     }
 
-    fun coverFile(bookId: String): File = File(coversDir, "$bookId.jpg")
+    fun coverFile(bookId: String): File {
+        val name = MessageDigest.getInstance("SHA-256").digest(bookId.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(coversDir, "$name.jpg")
+    }
 
     fun hasUsableCover(path: String?): Boolean =
         !path.isNullOrBlank() && File(path).exists() && File(path).length() > 0L
 
+    private suspend fun safelySave(action: suspend () -> String?): String? = try {
+        action()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) { null }
+
+    private fun writeImage(bookId: String, input: InputStream, length: Long = -1, checkActive: () -> Unit): String {
+        require(length <= 16L * 1024 * 1024)
+        val dest = coverFile(bookId)
+        val staging = File.createTempFile("cover-", ".part", coversDir)
+        try {
+            var total = 0L
+            staging.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    checkActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= 16L * 1024 * 1024)
+                    output.write(buffer, 0, count)
+                }
+                require(total > 0 && (length < 0 || length == total))
+                output.fd.sync()
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(staging.path, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0)
+            require(bounds.outWidth <= 16384 && bounds.outHeight <= 16384)
+            require(bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000)
+            val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+            while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 1024) {
+                options.inSampleSize *= 2
+            }
+            requireNotNull(BitmapFactory.decodeFile(staging.path, options)).recycle()
+            checkActive()
+            Files.move(staging.toPath(), dest.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING)
+            return dest.absolutePath
+        } finally { staging.delete() }
+    }
+
     suspend fun downloadRemote(bookId: String, url: String): String? = withContext(Dispatchers.IO) {
         if (url.isBlank()) return@withContext null
-        runCatching {
+        val coroutine = currentCoroutineContext()
+        safelySave {
             val request = Request.Builder().url(url).get().build()
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
-                val bytes = response.body?.bytes() ?: return@runCatching null
-                if (bytes.isEmpty()) return@runCatching null
-                val dest = coverFile(bookId)
-                dest.writeBytes(bytes)
-                dest.absolutePath
+            http.newCall(request).consumeCancellable { response ->
+                if (!response.isSuccessful) null else {
+                    response.body.byteStream().use { input ->
+                        writeImage(bookId, input, response.body.contentLength()) { coroutine.ensureActive() }
+                    }
+                }
             }
-        }.getOrNull()
+        }
     }
 
     suspend fun saveBytes(bookId: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
-        if (bytes.isEmpty()) return@withContext null
-        runCatching {
-            val dest = coverFile(bookId)
-            dest.writeBytes(bytes)
-            dest.absolutePath
-        }.getOrNull()
+        val coroutine = currentCoroutineContext()
+        safelySave { bytes.inputStream().use { writeImage(bookId, it, bytes.size.toLong()) { coroutine.ensureActive() } } }
     }
 
     suspend fun saveUserCover(bookId: String, uri: Uri): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val dest = coverFile(bookId)
+        val coroutine = currentCoroutineContext()
+        safelySave {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
-            } ?: return@runCatching null
-            if (!dest.exists() || dest.length() == 0L) return@runCatching null
-            dest.absolutePath
-        }.getOrNull()
+                writeImage(bookId, input) { coroutine.ensureActive() }
+            }
+        }
     }
 
-    suspend fun generate(bookId: String, title: String, author: String): String =
-        withContext(Dispatchers.IO) {
-            val dest = coverFile(bookId)
-            val bitmap = renderGeneratedCover(title, author)
-            FileOutputStream(dest).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-            }
-            bitmap.recycle()
-            dest.absolutePath
-        }
+    suspend fun generate(bookId: String, title: String, author: String): String = withContext(Dispatchers.IO) {
+        val bitmap = renderGeneratedCover(title, author)
+        val bytes = java.io.ByteArrayOutputStream()
+        try { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, bytes)) }
+        finally { bitmap.recycle() }
+        val coroutine = currentCoroutineContext()
+        bytes.toByteArray().inputStream().use { writeImage(bookId, it) { coroutine.ensureActive() } }
+    }
 
     /**
      * Resolve local cover path + source for a book.
@@ -141,7 +186,7 @@ class CoverStore(private val context: Context) {
         val height = 900
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val seed = abs((title + author).hashCode())
+        val seed = (title + author).hashCode() and Int.MAX_VALUE
         val (c1, c2) = palette[seed % palette.size]
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
