@@ -41,6 +41,7 @@ class ReadiumLocatorTest {
         val encoded = PdfLocatorCodec.encode(migrated)
         assertEquals(migrated, PdfLocatorCodec.restore(session.publication, encoded))
         assertNull(PdfLocatorCodec.restore(session.publication, "broken"))
+        var reopened: com.yishenghuang.heartext.readium.ReaderSession? = null
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -92,10 +93,38 @@ class ReadiumLocatorTest {
                 }
                 await(scenario) { received.lastOrNull()?.locations?.position == 3 && visiblePdfPage(rootView!!) == 2 }
                 scenario.onActivity { assertEquals(2, visiblePdfPage(it.window.decorView)) }
+                var savedWithoutSession: androidx.fragment.app.Fragment.SavedState? = null
+                scenario.onActivity { activity ->
+                    val currentHost = activity.supportFragmentManager.findFragmentByTag(id)!!
+                    savedWithoutSession = activity.supportFragmentManager.saveFragmentInstanceState(currentHost)
+                    activity.supportFragmentManager.beginTransaction().remove(currentHost).commitNow()
+                    received.clear()
+                }
+                app.container.readerSessions.close(session)
+                assertNull(app.container.readerSessions[id])
+                scenario.onActivity { activity ->
+                    val restored = ReadiumHostFragment.newInstance(id).apply { setInitialSavedState(savedWithoutSession) }
+                    activity.supportFragmentManager.beginTransaction().add(containerId, restored, id).commitNow()
+                    assertFalse(restored.bindAvailableSession())
+                    val waitingState = activity.supportFragmentManager.saveFragmentInstanceState(restored)
+                    activity.supportFragmentManager.beginTransaction().remove(restored).commitNow()
+                    val waitingAgain = ReadiumHostFragment.newInstance(id).apply { setInitialSavedState(waitingState) }
+                    activity.supportFragmentManager.beginTransaction().add(containerId, waitingAgain, id).commitNow()
+                    assertFalse(waitingAgain.bindAvailableSession())
+                }
+                // The fragment snapshot is newer than this persisted second-page locator.
+                reopened = app.container.readerSessions.open(id, file.path, encoded).getOrThrow()
+                scenario.onActivity { activity ->
+                    val restored = activity.supportFragmentManager.findFragmentByTag(id) as ReadiumHostFragment
+                    assertTrue(restored.bindAvailableSession())
+                    assertTrue(restored.bindAvailableSession()) // Recomposition must not recreate a live navigator.
+                }
+                await(scenario) { received.lastOrNull()?.locations?.position == 3 && visiblePdfPage(rootView!!) == 2 }
                 scenario.onActivity { observer!!.close() }
             }
         } finally {
             scope.cancel()
+            reopened?.let { app.container.readerSessions.close(it) }
             app.container.readerSessions.close(session)
             file.delete()
         }

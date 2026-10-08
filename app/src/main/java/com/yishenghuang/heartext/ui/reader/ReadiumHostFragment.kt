@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentFactory
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -22,7 +23,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.r2.navigator.Navigator
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
@@ -37,6 +37,8 @@ class ReadiumHostFragment : Fragment() {
     private var bookId: String = ""
     private var navigator: Navigator? = null
     private var directionalAttached = false
+    private var hasPublicationFactory = false
+    private var restoredLocator: Locator? = null
 
     private val _locatorUpdates = MutableSharedFlow<Locator>(replay = 1, extraBufferCapacity = 8)
     val locatorUpdates: SharedFlow<Locator> = _locatorUpdates.asSharedFlow()
@@ -45,7 +47,20 @@ class ReadiumHostFragment : Fragment() {
         bookId = requireArguments().getString(ARG_BOOK_ID).orEmpty()
         val app = requireActivity().application as HearTextApp
         val session = app.container.readerSessions[bookId]
-        val restoredLocator = parseLocator(savedInstanceState?.getString(STATE_LOCATOR))
+        restoredLocator = parseLocator(savedInstanceState?.getString(STATE_LOCATOR))
+        configureFactory(session)
+        super.onCreate(savedInstanceState)
+        if (session == null) {
+            // Placeholders are only needed to deserialize the saved child tree.
+            // Remove them at CREATED, before FragmentManager advances them to view creation.
+            childFragmentManager.commitNow {
+                childFragmentManager.fragments.forEach { remove(it) }
+            }
+        }
+    }
+
+    private fun configureFactory(session: ReaderSession?) {
+        val app = requireActivity().application as HearTextApp
         val livePrefs = EpubPreferenceMapper.from(app.container.readerPreferences.settings.value)
 
         when (session) {
@@ -66,11 +81,15 @@ class ReadiumHostFragment : Fragment() {
                     )
             }
             null -> {
-                childFragmentManager.fragmentFactory =
-                    PdfNavigatorFragment.createDummyFactory(pdfEngineProvider = PdfiumEngineProvider())
+                // Deserializing a live PDF navigator without a publication can crash
+                // before rebinding. This dedicated child tree only contains navigators;
+                // restore inert placeholders until the repository has reopened the file.
+                childFragmentManager.fragmentFactory = object : FragmentFactory() {
+                    override fun instantiate(classLoader: ClassLoader, className: String): Fragment = Fragment()
+                }
             }
         }
-        super.onCreate(savedInstanceState)
+        hasPublicationFactory = session != null
     }
 
     override fun onCreateView(
@@ -81,8 +100,22 @@ class ReadiumHostFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        bindAvailableSession()
+    }
+
+    /** A restored host can exist before the ViewModel finishes reopening its publication. */
+    internal fun bindAvailableSession(): Boolean {
+        if (navigator != null) return true
+        if (view == null || childFragmentManager.isStateSaved) return false
         val app = requireActivity().application as HearTextApp
-        val session = app.container.readerSessions[bookId] ?: return
+        val session = app.container.readerSessions[bookId] ?: return false
+        if (!hasPublicationFactory) {
+            // Discard dummy navigator state created during restoration without a publication.
+            childFragmentManager.findFragmentByTag(NAVIGATOR_TAG)?.let { dummy ->
+                childFragmentManager.commitNow { remove(dummy) }
+            }
+            configureFactory(session)
+        }
 
         val tag = NAVIGATOR_TAG
         if (childFragmentManager.findFragmentByTag(tag) == null) {
@@ -128,10 +161,11 @@ class ReadiumHostFragment : Fragment() {
                 }
             }
         }
+        return navigator != null
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        navigator?.currentLocator?.value?.let { outState.putString(STATE_LOCATOR, locatorToJson(it)) }
+        (navigator?.currentLocator?.value ?: restoredLocator)?.let { outState.putString(STATE_LOCATOR, locatorToJson(it)) }
         super.onSaveInstanceState(outState)
     }
 

@@ -120,8 +120,10 @@ class ReaderLifecycleTest {
     @Test fun sharedPublicationStaysOpenUntilLastOwnerAndStaleCloseCannotCloseNewSession() = runBlocking {
         val path = pdf().path
         val first = sessions.open("pdf", path, null).getOrThrow()
-        val second = sessions.open("pdf", path, null).getOrThrow()
+        val latest = """{"href":"publication.pdf","type":"application/pdf","title":"Latest resume position","heartextPdfiumLocatorVersion":1,"locations":{"position":1}}"""
+        val second = sessions.open("pdf", path, latest).getOrThrow()
         assertSame(first, second)
+        assertEquals("Latest resume position", second.initialLocator!!.title)
         sessions.close(first)
         assertSame(second, sessions["pdf"])
         sessions.close(second)

@@ -193,3 +193,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 验证过程中修复了测试资源关闭/Unit 返回类型、locator 中不一致的页码片段，以及渲染尚未就绪时过早导航/断言的问题。最终等待条件同时检查 locator 与渲染器页码，不放宽位置要求。先前失败轮次不计作通过。
 - 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（51s）：Debug、Lint、45 项 JVM、36 项设备测试，0 failures / 0 skipped；真实系统/离线语音及数据库迁移回归通过。完整日志位于 build/local-validation/full-pdf-verification.log。
 - 尚未证明系统杀进程后的完整页面恢复；无 session 时的已恢复 Fragment、共享 session 的最新初始位置仍需处理。正文字符锚点、书签跨排版定位及书籍离线删除重试也仍在既定清单中。没有发布、推送或生产写入。
+
+### 第十五轮：publication 尚未打开时的 PDF 恢复
+
+- 恢复 Host 时若仓库尚无 publication，仅反序列化无行为的子 Fragment 占位，随后清除；不创建需要真实文档的 Pdfium 导航器。真实恢复时序测试证明原 PdfNavigatorFragment dummy factory 会在 onViewCreated 中因缺少文档子 Fragment 而空指针，单纯在创建后移除不足以防止崩溃，现已移除这条 dummy 导航器路径。
+- Host 增加幂等的 bindAvailableSession；Compose 已有 Host 在 session 就绪后重新绑定真实 navigator、方向输入和位置流。等待期间再次保存状态仍保留之前的 locator，避免尚未得到 navigator 时丢掉恢复点。
+- 仓库复用 publication 时重新解析本次打开的 locator，校验取消后才更新初始位置并增加引用；已有导航器不被强行跳转，新打开者不再沿用首次打开时的旧位置。引用计数与实例身份关闭规则保持不变。
+- 增强真实三页 PDF 测试：保存第三页，释放 publication，先恢复 Host 并验证尚不可绑定，再保存/恢复一次等待状态，然后用较旧的第二页持久位置重开 publication；最终仍恢复 Fragment 快照中的第三页，同时验证渲染器实际页码。重复绑定不重建有效导航器。共享 publication 测试验证新的初始位置进入复用实例。
+- 原占位恢复崩溃已由专项测试复现；修复后的专项通过。最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m7s）：Debug、Lint、45 项 JVM、36 项设备测试，0 failures / 0 skipped。日志：build/local-validation/full-recovery-verification.log。
+- 本轮通过真实 Fragment 保存状态和主动释放 publication 制造恢复顺序，不等同于操作系统实际杀进程的完整 UI 验证。仍需检查 Compose 阅读容器恢复后的绑定：程序创建的 FragmentContainerView 不经过 XML 构造中的 onContainerAvailable，现有 Fragment 视图重新挂载需进一步实测。正文字符锚点、书签定位及书籍删除重试仍属既定待办。未发布或生产写入。

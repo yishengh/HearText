@@ -736,7 +736,10 @@ private fun ReadiumPagerHost(
         update = { container ->
             val tag = "readium_$bookId"
             val fm = activity.supportFragmentManager
-            if (fm.findFragmentByTag(tag) == null && bookId.isNotBlank()) {
+            val existing = fm.findFragmentByTag(tag) as? ReadiumHostFragment
+            if (existing != null) {
+                existing.bindAvailableSession()
+            } else if (bookId.isNotBlank()) {
                 fm.commit {
                     replace(container.id, ReadiumHostFragment.newInstance(bookId), tag)
                 }

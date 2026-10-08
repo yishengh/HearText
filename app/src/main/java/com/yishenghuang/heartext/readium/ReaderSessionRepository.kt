@@ -28,14 +28,14 @@ typealias HearPdfNavigatorFactory =
 sealed class ReaderSession {
     abstract val bookId: String
     abstract val publication: Publication
-    abstract val initialLocator: Locator?
+    abstract var initialLocator: Locator?
     /** Listen / TTS is only for textual publications. */
     abstract val listeningEnabled: Boolean
 
     data class Epub(
         override val bookId: String,
         override val publication: Publication,
-        override val initialLocator: Locator?,
+        @Volatile override var initialLocator: Locator?,
         val navigatorFactory: EpubNavigatorFactory,
         val initialPreferences: EpubPreferences
     ) : ReaderSession() {
@@ -45,7 +45,7 @@ sealed class ReaderSession {
     data class Pdf(
         override val bookId: String,
         override val publication: Publication,
-        override val initialLocator: Locator?,
+        @Volatile override var initialLocator: Locator?,
         val navigatorFactory: HearPdfNavigatorFactory,
         val initialPreferences: PdfiumPreferences
     ) : ReaderSession() {
@@ -70,6 +70,11 @@ class ReaderSessionRepository(
         locatorJson: String?
     ): Result<ReaderSession> = mutex.withLock {
         sessions[bookId]?.let {
+            // A second reader may open before the previous owner's asynchronous close.
+            // Reuse the publication, but take this open request's current saved position.
+            val locator = PdfLocatorCodec.restore(it.publication, locatorJson)
+            currentCoroutineContext().ensureActive()
+            it.initialLocator = locator
             references[bookId] = references.getValue(bookId) + 1
             return Result.success(it)
         }
