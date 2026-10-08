@@ -18,13 +18,17 @@ class BookStorageTest {
     private lateinit var root: File
     private lateinit var database: AppDatabase
     private lateinit var repository: BookRepository
+    private lateinit var preferencesName: String
 
     @Before fun setUp() {
         check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
         val app = ApplicationProvider.getApplicationContext<Context>()
         root = File(app.cacheDir, "book-test-${UUID.randomUUID()}").apply { mkdirs() }
+        preferencesName = "book-test-${UUID.randomUUID()}"
         val context = object : ContextWrapper(app) {
             override fun getFilesDir() = File(root, "private").apply { mkdirs() }
+            override fun getSharedPreferences(name: String, mode: Int) =
+                app.getSharedPreferences("$preferencesName-$name", mode)
         }
         database = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).build()
         repository = BookRepository(context, database.bookDao(), CoverStore(context), annotationDao = database.annotationDao())
@@ -32,6 +36,8 @@ class BookStorageTest {
 
     @After fun tearDown() {
         database.close()
+        ApplicationProvider.getApplicationContext<Context>()
+            .deleteSharedPreferences("$preferencesName-library_state")
         root.deleteRecursively()
     }
 

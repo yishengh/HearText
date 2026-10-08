@@ -496,7 +496,11 @@ class ReaderViewModel(
 
     fun importFont(uri: android.net.Uri) {
         viewModelScope.launch {
-            val path = fontStore.importFromUri(uri) ?: return@launch
+            val path = fontStore.importFromUri(uri)
+            if (path == null) {
+                _error.value = app.getString(R.string.error_import_failed)
+                return@launch
+            }
             readerPreferences.update {
                 it.copy(
                     customFontPath = path,

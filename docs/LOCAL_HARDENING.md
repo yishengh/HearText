@@ -39,6 +39,7 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 ## 验证与跨项目依赖
 
 尚未完成。网络验证必须使用本地/模拟服务，不对生产执行写入测试。
+后端 2026-10-07 交接及安卓侧待验证约定见 [ANDROID_BACKEND_INTEGRATION.md](ANDROID_BACKEND_INTEGRATION.md)。公网契约已只读核对，真实账号业务联调未完成。
 
 ### 第二轮实现（进行中）
 
@@ -216,3 +217,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 共享 espeak-ng-data 路径在检查可用性前执行与语音包相同的同步备份恢复。此前只有单个语音目录恢复，若共享目录替换中断而只留下 .espeak-ng-data.backup，解析语音会误判不可用，ensureSharedEspeakNgData 还会尝试下载。
 - 扩展现有真实官方模型测试：将有效数据目录改名为共享备份，验证 resolvePack 恢复共享目录、识别模型可播放；再次制造备份状态，验证 ensureSharedEspeakNgData 在本地恢复，然后使用恢复后的真实资源合成并执行暂停/恢复/停止。没有用空模型或仅检查目录存在来代替合成验证。
 - 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m9s）：Debug、Lint、46 项 JVM、36 项设备测试，0 failures / 0 skipped。日志：build/local-validation/shared-voice-recovery.log。共享资源恢复遗漏已关闭；既定其他待办保持不变。未发布、推送或生产写入。
+
+### 第十八轮：字体导入与测试隔离
+
+- 字体先写入限量 64 MiB 暂存文件，检查取消、空文件及 Android Typeface 能否加载，再原子提交。失败不替换现有字体设置，显示已有四语言导入失败提示；目录创建失败也返回可处理的失败结果。
+- 文件路径使用内容 SHA-256，相同字体复用路径，不同字体使 Typeface/分页缓存失效。保留原有字体文件与旧路径兼容，尚未自动清理历史字体文件。
+- 新设备测试加载两种真实字体，覆盖路径变化、重复导入、无效/空输入、取消、目录不可写及旧文件保持完整。
+- 回归首轮发现 PDF 生命周期测试错误地把 publication 关闭当作独立 Room 保存完成；改为同时等待持久化任务结束后断言。下一轮模拟器退出导致测试中断，重启本任务模拟器后发现存储测试共用 library_state 偏好设置，污染示例初始化标记；现隔离并清理测试偏好设置。没有放宽功能断言；失败轮次不计作通过。
+- 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（49s）：Debug、Lint、46 项 JVM、37 项设备测试，0 failures / 0 skipped。日志：build/local-validation/font-isolated-verification.log。字体导入及阅读重建回归通过。
+- 只读接收后端部署交接并读取公网 OpenAPI；记录 Retry-After 缺失和真实账号验证边界。其他既定待办仍未关闭；没有生产写入、发布或推送。

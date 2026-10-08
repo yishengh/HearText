@@ -98,6 +98,8 @@ class ReaderLifecycleTest {
         assertNotNull(sessions["pdf"])
         gate.countDown()
         withTimeout(5000) { while (sessions["pdf"] != null) delay(10) }
+        // Publication close and Room persistence are independent coroutine jobs.
+        withTimeout(5000) { persistence.coroutineContext[Job]!!.children.toList().joinAll() }
         assertNull(sessions["pdf"])
         assertEquals(locator, db.bookDao().getBook("pdf")!!.locatorJson)
         assertEquals(75f, db.bookDao().getBook("pdf")!!.progressPercent)
