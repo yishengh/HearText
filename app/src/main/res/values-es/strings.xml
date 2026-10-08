@@ -314,4 +314,5 @@
     <string name="auth_sync_failed">No se completó la sincronización. Tus libros locales siguen disponibles.</string>
     <string name="auth_sign_out_failed">No se pudo cerrar la sesión. Comprueba la conexión e inténtalo de nuevo.</string>
     <string name="auth_connection_failed">No se puede conectar al servicio. Reintenta o continúa sin conexión.</string>
+    <string name="error_save_progress">No se pudo guardar la posición de lectura. Comprueba el espacio disponible e inténtalo de nuevo.</string>
 </resources>

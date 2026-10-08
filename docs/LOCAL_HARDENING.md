@@ -165,3 +165,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 依据 [Android Auto Backup 官方文档](https://developer.android.com/identity/data/autobackup)：默认包含多数应用文件，部分设备的 D2D 不完全依赖 allowBackup，因此同时配置设备迁移排除项。应用已有的账号云同步不受这些系统规则影响；本地导入文件不会通过系统备份恢复，卸载/清除应用数据前需要保留原文件。
 - 设备测试检查实际安装包的 ApplicationInfo 标志和编译后的两套 XML 规则。未触发真实云备份，未执行跨设备迁移；不同厂商迁移实现的实际遵守情况未验证，不能把规则检查当作所有 OEM 的端到端迁移测试。
 - 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（52s）：Debug、Lint、45 项 JVM、30 项设备测试，0 failures / 0 skipped。
+
+### 第十二轮：阅读页面退出与资源释放
+
+- 删除 onCleared 中向已取消 viewModelScope 提交保存/关闭任务的路径。阅读事件立即截取章节、页码和单调递增的本地时间戳，交给应用作用域完成保存；页面销毁不取消已经发生的事件，迟到的旧写入不能凭执行时间覆盖新位置。
+- 保存默认页码使用内存中的最后已知位置，不依赖可能尚未更新的 Room Flow。读取失败不会标记 sessionReady，也不重置旧进度。PDF 仅由 locator 事件保存位置，通用返回按钮的文本页码保存不会覆盖 PDF 进度。保存失败有四语言提示。
+- PDF publication 按具体 session 实例释放，共享使用者计数归零才关闭；旧实例的迟到关闭不能关闭同 ID 的新实例。应用作用域负责页面销毁后的关闭，后台听书继续保持原有生命周期。
+- 新增设备测试用阻塞写入队列制造“发出翻页事件后立即销毁 ViewModel”的时序，验证最后位置保存和旧时间戳拒绝；使用真实 PdfDocument/Readium/Pdfium 验证退出释放、共享引用和旧实例关闭，并验证损坏输入与 PDF 返回不会重置位置。
+- 首轮因测试 tearDown 返回类型不是 Unit 被 JUnit 拒绝，修复后 33 项设备测试通过；补充损坏输入及 PDF 位置断言后再次完整验证。尚未以本轮测试证明字体排版后的字符锚点、句内听书位置或 PDF 导航器重建定位，这些仍待专项处理。
+- 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（55s）：Debug、Lint、45 项 JVM、34 项设备测试，0 failures / 0 skipped。

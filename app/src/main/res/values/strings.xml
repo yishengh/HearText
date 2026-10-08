@@ -314,4 +314,5 @@
     <string name="auth_sync_failed">Cloud sync could not finish. Your local books are still available.</string>
     <string name="auth_sign_out_failed">Unable to sign out. Check your connection and try again.</string>
     <string name="auth_connection_failed">Unable to connect to the sign-in service. Try again or continue offline.</string>
+    <string name="error_save_progress">Unable to save your reading position. Check available storage and try again.</string>
 </resources>

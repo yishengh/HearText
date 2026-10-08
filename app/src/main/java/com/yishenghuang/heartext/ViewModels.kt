@@ -150,8 +150,11 @@ class ReaderViewModel(
     private val readerSessions: com.yishenghuang.heartext.readium.ReaderSessionRepository,
     private val fontStore: com.yishenghuang.heartext.data.FontStore,
     private val annotationRepository: com.yishenghuang.heartext.data.AnnotationRepository,
-    private val app: Application
+    private val app: Application,
+    private val persistenceScope: kotlinx.coroutines.CoroutineScope
 ) : ViewModel() {
+    private var openedSession: com.yishenghuang.heartext.readium.ReaderSession? = null
+    private var lastKnownOffset = 0
     val book = bookRepository.observeBook(bookId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -210,6 +213,7 @@ class ReaderViewModel(
                 _loading.value = false
                 return@launch
             }
+            lastKnownOffset = entity.lastOffset
 
             when (entity.format) {
                 BookFormat.TXT, BookFormat.EPUB -> {
@@ -221,11 +225,11 @@ class ReaderViewModel(
                             _chapters.value = loaded
                             _chapterIndex.value =
                                 entity.lastChapterIndex.coerceIn(0, (loaded.size - 1).coerceAtLeast(0))
+                            _sessionReady.value = true
                         }
                         .onFailure {
                             _error.value = it.message ?: app.getString(R.string.error_load_chapters)
                         }
-                    _sessionReady.value = true
                     _loading.value = false
                 }
                 BookFormat.PDF -> {
@@ -233,6 +237,7 @@ class ReaderViewModel(
                     _listeningEnabled.value = false
                     readerSessions.open(bookId, entity.filePath, entity.locatorJson)
                         .onSuccess {
+                            openedSession = it
                             _sessionReady.value = true
                             _loading.value = false
                         }
@@ -560,41 +565,57 @@ class ReaderViewModel(
         // Do not call startFromPreferences — 听书 only opens the player.
     }
 
+    private fun saveReadingPosition(write: suspend () -> Unit) {
+        persistenceScope.launch {
+            try { write() }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { _error.value = app.getString(R.string.error_save_progress) }
+        }
+    }
+
     fun persistProgress(offset: Int? = null, chapterPages: Int? = null) {
-        viewModelScope.launch {
-            val chapters = _chapters.value
-            val totalChapters = chapters.size.coerceAtLeast(1)
-            val chapter = _chapterIndex.value.coerceIn(0, totalChapters - 1)
-            val pages = (chapterPages ?: lastKnownChapterPages).coerceAtLeast(1)
-            val page = (offset ?: (book.value?.lastOffset ?: 0)).coerceAtLeast(0)
-            val percent = if (chapters.isEmpty()) {
-                book.value?.progressPercent ?: 0f
-            } else {
-                computeReadingProgressPercent(
-                    chapterIndex = chapter,
-                    pageIndex = page,
-                    chapterPageCount = pages,
-                    totalChapters = totalChapters
-                )
-            }
+        if (_useReadium.value || !_sessionReady.value) return
+        val chapters = _chapters.value
+        val totalChapters = chapters.size.coerceAtLeast(1)
+        val chapter = _chapterIndex.value.coerceIn(0, totalChapters - 1)
+        val pages = (chapterPages ?: lastKnownChapterPages).coerceAtLeast(1)
+        val page = (offset ?: lastKnownOffset).coerceAtLeast(0)
+        lastKnownOffset = page
+        val percent = if (chapters.isEmpty()) {
+            book.value?.progressPercent ?: 0f
+        } else {
+            computeReadingProgressPercent(
+                chapterIndex = chapter,
+                pageIndex = page,
+                chapterPageCount = pages,
+                totalChapters = totalChapters
+            )
+        }
+        val timestamp = bookRepository.captureProgressTimestamp()
+        saveReadingPosition {
             bookRepository.updateProgress(
                 bookId = bookId,
                 chapterIndex = chapter,
                 offset = page,
                 progressPercent = percent,
-                totalChapters = chapters.size.takeIf { it > 0 }
+                totalChapters = chapters.size.takeIf { it > 0 },
+                updatedAt = timestamp
             )
         }
     }
 
     fun persistLocator(locatorJson: String, progressPercent: Float) {
-        viewModelScope.launch {
+        if (!_sessionReady.value) return
+        val chapter = _chapterIndex.value
+        val timestamp = bookRepository.captureProgressTimestamp()
+        saveReadingPosition {
             bookRepository.updateProgress(
                 bookId = bookId,
-                chapterIndex = _chapterIndex.value,
+                chapterIndex = chapter,
                 offset = 0,
                 progressPercent = progressPercent,
-                locatorJson = locatorJson
+                locatorJson = locatorJson,
+                updatedAt = timestamp
             )
         }
     }
@@ -606,10 +627,10 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
-        persistProgress()
         // Do not stop PlaybackCoordinator — playback continues in the foreground service.
-        viewModelScope.launch {
-            readerSessions.close(bookId)
+        val session = openedSession
+        persistenceScope.launch {
+            if (session != null) readerSessions.close(session)
         }
         super.onCleared()
     }
@@ -627,7 +648,8 @@ class ReaderViewModel(
                     readerSessions = app.container.readerSessions,
                     fontStore = app.container.fontStore,
                     annotationRepository = app.container.annotationRepository,
-                    app = app
+                    app = app,
+                    persistenceScope = app.container.applicationScope
                 )
             }
         }

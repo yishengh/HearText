@@ -21,6 +21,10 @@ class BookRepository(
     private val annotationDao: AnnotationDao? = null,
     private val annotationRepository: AnnotationRepository? = null
 ) {
+    private val progressClock = java.util.concurrent.atomic.AtomicLong()
+    internal fun captureProgressTimestamp(): Long = progressClock.updateAndGet {
+        maxOf(it + 1, System.currentTimeMillis())
+    }
     private val booksDir: File
         get() = File(context.filesDir, "books").also { it.mkdirs() }
 
@@ -325,12 +329,13 @@ class BookRepository(
         offset: Int,
         progressPercent: Float,
         locatorJson: String? = null,
-        totalChapters: Int? = null
+        totalChapters: Int? = null,
+        updatedAt: Long = captureProgressTimestamp()
     ) = withContext(Dispatchers.IO) {
         bookDao.updateProgress(
             bookId, chapterIndex.coerceAtLeast(0), offset.coerceAtLeast(0),
             progressPercent.takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f,
-            System.currentTimeMillis(), locatorJson, totalChapters?.coerceAtLeast(1)
+            updatedAt, locatorJson, totalChapters?.coerceAtLeast(1)
         )
         val updated = bookDao.getBook(bookId) ?: return@withContext
         runCatching { cloudSync?.pushProgress(updated) }

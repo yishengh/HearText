@@ -49,7 +49,7 @@ class HearTextApp : Application() {
 }
 
 class AppContainer(app: Application) {
-    private val applicationScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+    internal val applicationScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
 
     val authTokenProvider = AuthTokenProvider()
     val api = HearTextApi(authTokenProvider)

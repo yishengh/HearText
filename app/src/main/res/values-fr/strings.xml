@@ -314,4 +314,5 @@
     <string name="auth_sync_failed">La synchronisation a échoué. Vos livres locaux restent disponibles.</string>
     <string name="auth_sign_out_failed">Déconnexion impossible. Vérifiez votre connexion et réessayez.</string>
     <string name="auth_connection_failed">Connexion au service impossible. Réessayez ou continuez hors ligne.</string>
+    <string name="error_save_progress">Impossible de sauvegarder la position de lecture. Vérifiez l’espace disponible et réessayez.</string>
 </resources>

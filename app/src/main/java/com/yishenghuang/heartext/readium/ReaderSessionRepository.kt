@@ -58,7 +58,8 @@ class ReaderSessionRepository(
     private val readium: ReadiumFacade
 ) {
     private val mutex = Mutex()
-    private val sessions = mutableMapOf<String, ReaderSession>()
+    private val sessions = java.util.concurrent.ConcurrentHashMap<String, ReaderSession>()
+    private val references = mutableMapOf<String, Int>()
 
     operator fun get(bookId: String): ReaderSession? = sessions[bookId]
 
@@ -67,7 +68,10 @@ class ReaderSessionRepository(
         filePath: String,
         locatorJson: String?
     ): Result<ReaderSession> = mutex.withLock {
-        sessions[bookId]?.let { return Result.success(it) }
+        sessions[bookId]?.let {
+            references[bookId] = references.getValue(bookId) + 1
+            return Result.success(it)
+        }
 
         val file = File(filePath)
         if (!file.exists()) {
@@ -136,15 +140,23 @@ class ReaderSessionRepository(
         }
 
         sessions[bookId] = session
+        references[bookId] = 1
         Result.success(session)
     }
 
-    suspend fun close(bookId: String) = mutex.withLock {
-        sessions.remove(bookId)?.publication?.close()
+    suspend fun close(session: ReaderSession) = mutex.withLock {
+        if (sessions[session.bookId] !== session) return@withLock
+        val remaining = references.getValue(session.bookId) - 1
+        if (remaining > 0) references[session.bookId] = remaining
+        else {
+            references.remove(session.bookId)
+            sessions.remove(session.bookId)?.publication?.close()
+        }
     }
 
     suspend fun closeAll() = mutex.withLock {
         sessions.values.forEach { it.publication.close() }
         sessions.clear()
+        references.clear()
     }
 }
