@@ -29,6 +29,22 @@ class HearTextApiTest {
     private val tokens = Tokens()
     private fun api() = HearTextApi(tokens, OkHttpClient(), server.url("/").toString())
 
+    @Test fun rateLimitBlocksRepeatedDownloadsWithoutRefreshingOrChangingFiles() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(429).addHeader("Retry-After", "60"))
+        val api = api()
+        val file = folder.newFile("limited.zip").apply { writeText("keep") }
+        repeat(3) {
+            val failure = runCatching { api.downloadOfflineVoice("voice", file) }.exceptionOrNull()
+            assertTrue(failure is ApiHttpException)
+            assertEquals(429, (failure as ApiHttpException).code)
+            assertTrue(failure.retryAfterMillis!! > 0)
+        }
+        assertEquals(1, server.requestCount)
+        assertFalse(tokens.refreshes.contains(true))
+        assertEquals("keep", file.readText())
+        assertEquals(1, folder.root.list()!!.size)
+    }
+
     @Test fun accountSwitchDuringDownloadPreservesInstalledFile() = runBlocking {
         server.enqueue(MockResponse().setBody("replacement"))
         val file = folder.newFile("voice.zip").apply { writeText("installed") }

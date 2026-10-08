@@ -25,6 +25,20 @@ class HearTextApi(
         .build(),
     endpoint: String = BuildConfig.API_BASE_URL
 ) {
+    private val retryAfterGate = RetryAfterGate()
+
+    private suspend fun <T> okhttp3.Call.consumeApiResponse(consume: (okhttp3.Response) -> T): T {
+        currentCoroutineContext().ensureActive()
+        retryAfterGate.check()
+        return consumeCancellable { response ->
+            val retryAfter = retryAfterGate.record(response.code, response.header("Retry-After"))
+            if (response.code == 429 || response.code == 503) {
+                throw ApiHttpException(response.code, "", retryAfter)
+            }
+            consume(response)
+        }
+    }
+
     private val baseUrl: String = endpoint.trimEnd('/')
 
     val isConfigured: Boolean
@@ -318,7 +332,7 @@ class HearTextApi(
                 .addHeader("Accept", "*/*")
                 .get()
                 .build()
-            return client.newCall(request).consumeCancellable { response ->
+            return client.newCall(request).consumeApiResponse { response ->
                 if (!response.isSuccessful) {
                     throw ApiHttpException(response.code, response.body?.string().orEmpty())
                 }
@@ -374,7 +388,7 @@ class HearTextApi(
                 "PATCH" -> builder.patch(body ?: ByteArray(0).toRequestBody(null))
                 else -> error("Unsupported method $method")
             }
-            return client.newCall(builder.build()).consumeCancellable { response ->
+            return client.newCall(builder.build()).consumeApiResponse { response ->
                 val result = response.code to response.body?.string().orEmpty()
                 tokenProvider.requireSession(session)
                 result
@@ -420,7 +434,7 @@ class HearTextApi(
                 "PATCH" -> builder.patch(body ?: ByteArray(0).toRequestBody(null))
                 else -> error("Unsupported method $method")
             }
-            return client.newCall(builder.build()).consumeCancellable { response ->
+            return client.newCall(builder.build()).consumeApiResponse { response ->
                 val result = response.code to response.body?.string().orEmpty()
                 tokenProvider.requireSession(session)
                 result
@@ -709,4 +723,4 @@ class HearTextApi(
 }
 
 // Server bodies may contain user content or internal diagnostics. Never expose them in logs/UI.
-class ApiHttpException(val code: Int, val body: String) : IOException("HTTP $code")
+class ApiHttpException(val code: Int, val body: String, val retryAfterMillis: Long? = null) : IOException("HTTP $code")

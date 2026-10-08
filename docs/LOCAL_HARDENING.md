@@ -226,3 +226,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 回归首轮发现 PDF 生命周期测试错误地把 publication 关闭当作独立 Room 保存完成；改为同时等待持久化任务结束后断言。下一轮模拟器退出导致测试中断，重启本任务模拟器后发现存储测试共用 library_state 偏好设置，污染示例初始化标记；现隔离并清理测试偏好设置。没有放宽功能断言；失败轮次不计作通过。
 - 最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（49s）：Debug、Lint、46 项 JVM、37 项设备测试，0 failures / 0 skipped。日志：build/local-validation/font-isolated-verification.log。字体导入及阅读重建回归通过。
 - 只读接收后端部署交接并读取公网 OpenAPI；记录 Retry-After 缺失和真实账号验证边界。其他既定待办仍未关闭；没有生产写入、发布或推送。
+
+
+### 第十九轮：后端 Retry-After 冷却
+
+- 认证 JSON、可选认证 JSON 与流式下载统一读取 429/503 的 Retry-After。冷却期间新调用立即返回带剩余毫秒数的 ApiHttpException，不保存服务器正文、不自动排队重试写操作。429 缺失或无效头默认冷却 1 秒；503 无头仍按原行为报告暂时不可用。
+- 按 [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3) 支持秒数和 RFC 1123 日期；期限使用单调时钟，较短的后续响应不能提前解除已有冷却。状态共享于同一 API 实例，重启后不保留，不声称覆盖进程重启或已经发出的并发请求。
+- 新增 3 项 JVM 测试覆盖时间格式/溢出/无效值、系统时钟变化与较短冷却，以及本地 429 后连续下载只发出一次请求、不刷新认证、不改变旧文件。已有取消与账号切换测试继续通过。
+- `tools/verify-local.ps1` 通过（1m9s）：Debug、Lint、49 项 JVM 测试。该轮未重跑设备测试；上一轮 37 项设备结果不能当作本次请求层修改后的设备验证。日志：build/local-validation/retry-after-verification.log。
+- 后续仍需完成既定同步删除、阅读定位及体验清单，并检查底层 HTTP 自动重试语义与完整设备回归。没有生产写入或发布。
