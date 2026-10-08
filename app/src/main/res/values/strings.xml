@@ -316,4 +316,5 @@
     <string name="auth_connection_failed">Unable to connect to the sign-in service. Try again or continue offline.</string>
     <string name="error_save_progress">Unable to save your reading position. Check available storage and try again.</string>
     <string name="error_cover_save">Could not save this cover. Try another image.</string>
+    <string name="reader_saved_text_position">Saved text position</string>
 </resources>

@@ -2,6 +2,9 @@ package com.yishenghuang.heartext.ui.reader
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import com.yishenghuang.heartext.data.TextPosition
+import com.yishenghuang.heartext.data.bookmarkPositionKey
+import com.yishenghuang.heartext.data.matchesBookmarkPage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -128,11 +131,10 @@ fun ReaderScreen(
     var readiumPercent by remember { mutableFloatStateOf(book?.progressPercent ?: 0f) }
     var pageSeeded by rememberSaveable { mutableStateOf(false) }
     var pendingSearchJump by remember { mutableStateOf<ReaderSearchHit?>(null) }
+    var pendingBookmarkJump by remember { mutableStateOf<TextPosition?>(null) }
     var suppressPageSync by remember { mutableStateOf(false) }
     val isCurrentPageBookmarked = annotations.any {
-        it.type == "bookmark" &&
-            it.chapterIndex == chapterIndex &&
-            (it.startOffset ?: 0) == pageIndex
+        it.matchesBookmarkPage(chapterIndex, pageIndex, viewModel.pageCharRangeProvider?.invoke())
     }
 
     LaunchedEffect(book?.id, loading) {
@@ -304,6 +306,8 @@ fun ReaderScreen(
                             bookId = book?.id.orEmpty(),
                             playbackSession = playbackSession,
                             pendingSearchJump = pendingSearchJump,
+                            pendingBookmarkJump = pendingBookmarkJump,
+                            onBookmarkJumpConsumed = { pendingBookmarkJump = null },
                             suppressPageSync = suppressPageSync,
                             onSearchJumpConsumed = { pendingSearchJump = null },
                             initialCharacter = viewModel.textPosition?.takeIf { it.chapter == chapterIndex }?.character,
@@ -313,6 +317,7 @@ fun ReaderScreen(
                                 pageCount = total.coerceAtLeast(1)
                                 viewModel.onEnginePageChanged(chapter, page, total, character)
                             },
+                            onPageCharRangeProvider = { viewModel.pageCharRangeProvider = it },
                             onPageCharOffsetProvider = { provider ->
                                 viewModel.pageCharOffsetProvider = provider
                             },
@@ -393,7 +398,7 @@ fun ReaderScreen(
     if (showBookmarks) {
         val bookmarks = annotations
             .filter { it.type == "bookmark" }
-            .distinctBy { (it.chapterIndex ?: 0) to (it.startOffset ?: 0) }
+            .distinctBy { it.bookmarkPositionKey() }
         val context = LocalContext.current
         AlertDialog(
             onDismissRequest = { viewModel.openBookmarks(false) },
@@ -412,13 +417,19 @@ fun ReaderScreen(
                             val title = chapters.getOrNull(idx)?.title
                                     ?: stringResource(R.string.reader_chapter_n, idx + 1)
                             val isCurrent =
-                                idx == chapterIndex && page == pageIndex
+                                mark.matchesBookmarkPage(chapterIndex, pageIndex, viewModel.pageCharRangeProvider?.invoke())
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        viewModel.selectChapter(idx)
-                                        pageIndex = page
+                                        val position = TextPosition.decode(mark.locatorJson)?.takeIf { it.chapter == idx && idx in chapters.indices }
+                                        if (position != null) {
+                                            suppressPageSync = true
+                                            pendingBookmarkJump = position
+                                        } else {
+                                            viewModel.selectChapter(idx)
+                                            pageIndex = page
+                                        }
                                         viewModel.openBookmarks(false)
                                         menuVisible = false
                                     }
@@ -429,7 +440,8 @@ fun ReaderScreen(
                                     color = if (isCurrent) HearPurple else Color.Unspecified
                                 )
                                 Text(
-                                    text = stringResource(R.string.reader_page_n, page + 1),
+                                    text = if (TextPosition.decode(mark.locatorJson) != null) stringResource(R.string.reader_saved_text_position)
+                                        else stringResource(R.string.reader_page_n, page + 1),
                                     color = if (isCurrent) {
                                         HearPurple.copy(alpha = 0.75f)
                                     } else {
@@ -537,11 +549,14 @@ private fun LumiReadHost(
     bookId: String,
     playbackSession: PlaybackSession,
     pendingSearchJump: ReaderSearchHit?,
+    pendingBookmarkJump: TextPosition?,
+    onBookmarkJumpConsumed: () -> Unit,
     suppressPageSync: Boolean,
     onSearchJumpConsumed: () -> Unit,
     initialCharacter: Int?,
     onPageProgress: (chapter: Int, page: Int, total: Int, character: Int?) -> Unit,
     onPageCharOffsetProvider: ((() -> Int?)?) -> Unit = {},
+    onPageCharRangeProvider: ((() -> IntRange?)?) -> Unit = {},
     onCenterTap: () -> Unit
 ) {
     val context = LocalContext.current
@@ -574,6 +589,13 @@ private fun LumiReadHost(
         onDispose {
             activity.keyEventInterceptor = null
         }
+    }
+
+    LaunchedEffect(pendingBookmarkJump, readViewRef.value) {
+        val position = pendingBookmarkJump ?: return@LaunchedEffect
+        val view = readViewRef.value ?: return@LaunchedEffect
+        view.jumpToCharacter(position.chapter, position.character)
+        onBookmarkJumpConsumed()
     }
 
     // Search jumps take priority and must not be overwritten by pageIndex sync.
@@ -659,7 +681,7 @@ private fun LumiReadHost(
             readView.setContentProvider { index ->
                 chapterSnapshot.getOrNull(index)?.plainText
             }
-            readView.configure(
+            if (!(suppressPageSync && readView.getCurrentLocation() != null)) readView.configure(
                 fontSizePx = fontSizePx,
                 theme = themeKey,
                 chapterCount = chapterSnapshot.size,
@@ -685,6 +707,7 @@ private fun LumiReadHost(
             )
             readView.setPageTransition(pageTransitionKey(settings.pageTurnEffect))
             readView.setChineseMode(settings.chineseMode)
+            onPageCharRangeProvider { readView.getCurrentPageCharacterRange() }
             onPageCharOffsetProvider {
                 readView.getCurrentPageStartCharacterOffset()
             }
@@ -693,6 +716,7 @@ private fun LumiReadHost(
 
     DisposableEffect(Unit) {
         onDispose {
+            onPageCharRangeProvider(null)
             onPageCharOffsetProvider(null)
             readViewRef.value?.clearTtsHighlight()
             readViewRef.value = null

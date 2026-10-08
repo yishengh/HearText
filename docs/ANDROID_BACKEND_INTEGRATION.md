@@ -23,3 +23,10 @@
 本阶段没有提供专用测试账号或可写测试环境。继续使用本地服务/模拟响应，不对生产执行书架写入、进度/批注同步、反馈提交或账号删除。需要两个明确测试账号和可写非生产环境才能完成真实账号隔离联调；删除账号还必须明确指定测试账号。缺少这些条件不阻止本地开发与验证。
 
 本文件仅记录安卓接口需求和验证边界；没有修改后端、触发部署、生产写入或付费调用。
+
+
+## 字符书签扩展（兼容现有接口）
+
+安卓数据库 v10 新增可空 annotations.locatorJson。新文字书签继续在 start_offset 保留旧页码，并通过已有 extras.heartext_text_position 对象传递 heartextTextPositionVersion=1、chapter（从 0 开始）及 character（章节正文 UTF-16 偏移）。旧客户端/无 extras 数据继续使用原页码。
+
+已只读确认后端 AnnotationCreate/Update/Out 支持 extras JSON，模型保留该字段；本地 MockWebServer 验证 POST 和 GET 往返及本地重新合并。未向生产提交书签，真实服务往返仍待非生产账号联调。无需后端变更；如后续后端过滤 extras，需要保留此命名字段。

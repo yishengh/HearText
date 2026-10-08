@@ -19,3 +19,14 @@ internal data class TextPosition(val chapter: Int, val character: Int) {
         } catch (_: Exception) { null }
     }
 }
+
+internal fun AnnotationEntity.bookmarkPositionKey(): String =
+    TextPosition.decode(locatorJson)?.let { "character:${it.chapter}:${it.character}" }
+        ?: "page:${chapterIndex ?: 0}:${startOffset ?: 0}"
+
+internal fun AnnotationEntity.matchesBookmarkPage(chapter: Int, page: Int, range: IntRange?): Boolean {
+    if (type != "bookmark" || chapterIndex != chapter) return false
+    val position = TextPosition.decode(locatorJson)
+    return if (position != null) position.chapter == chapter && range?.contains(position.character) == true
+    else (startOffset ?: 0) == page
+}

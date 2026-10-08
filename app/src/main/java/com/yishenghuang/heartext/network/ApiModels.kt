@@ -112,7 +112,8 @@ data class ApiAnnotation(
     val selectedText: String?,
     val color: String?,
     val note: String?,
-    val clientUpdatedAt: String
+    val clientUpdatedAt: String,
+    val locatorJson: String? = null
 )
 
 data class ApiOfflineVoice(

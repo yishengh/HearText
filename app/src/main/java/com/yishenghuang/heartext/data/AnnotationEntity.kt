@@ -26,6 +26,7 @@ data class AnnotationEntity(
     val remoteId: String? = null,
     val clientUpdatedAt: Long = System.currentTimeMillis(),
     val remoteOwnerId: String? = null,
+    val locatorJson: String? = null,
     @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
     @ColumnInfo(defaultValue = "0") val deleteSynced: Boolean = false
 )

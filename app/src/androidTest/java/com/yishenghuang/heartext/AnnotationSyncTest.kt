@@ -43,6 +43,35 @@ class AnnotationSyncTest {
     }
     @After fun tearDown() { db.close() }
 
+    @Test fun characterBookmarkRoundTripsThroughExtrasAndCoexistsWithLegacyPageBookmarks() = runBlocking {
+        val posted = java.util.concurrent.atomic.AtomicReference<JSONObject>()
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.method == "POST") {
+                    val payload = JSONObject(request.body.readUtf8()).put("id", "remote-bookmark")
+                    posted.set(payload)
+                    return MockResponse().setBody(payload.toString())
+                }
+                return MockResponse().setBody("[${posted.get()}]")
+            }
+        }
+        val created = repository.addBookmark("book", "remote-book", 2, 3, characterOffset = 1200)
+        assertEquals(1200, posted.get().getJSONObject("extras").getJSONObject("heartext_text_position").getInt("character"))
+        db.annotationDao().delete(created.id)
+        repository.syncFromServer("book", "remote-book")
+        val restored = db.annotationDao().listForBook("book").single()
+        assertEquals(TextPosition(2, 1200), TextPosition.decode(restored.locatorJson))
+        assertEquals(restored.id, repository.findBookmark("book", 2, 99, 1100..1300)!!.id)
+        val legacy = restored.copy(id = "legacy", clientAnnotationId = "legacy", locatorJson = null, remoteId = null)
+        val other = restored.copy(id = "other", clientAnnotationId = "other", locatorJson = TextPosition(2, 2400).encode(), remoteId = null)
+        db.annotationDao().upsert(legacy)
+        db.annotationDao().upsert(other)
+        repository.dedupeBookmarks("book")
+        assertEquals(3, db.annotationDao().listForBook("book").size)
+        assertEquals("legacy", repository.findBookmark("book", 2, 3, 100..200)!!.id)
+        assertNull(repository.findBookmark("book", 2, 99, 100..200))
+    }
+
     @Test fun failedDeleteStaysHiddenAndRetriesWithoutResurrection() = runBlocking {
         db.annotationDao().upsert(annotation)
         server.enqueue(MockResponse().setResponseCode(503))

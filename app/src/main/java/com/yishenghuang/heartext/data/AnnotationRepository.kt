@@ -48,6 +48,7 @@ class AnnotationRepository(
                         id = UUID.randomUUID().toString(), bookId = bookId,
                         clientAnnotationId = item.clientAnnotationId.ifBlank { item.id }, type = item.type,
                         chapterId = item.chapterId, chapterIndex = item.chapterIndex,
+                        locatorJson = item.locatorJson,
                         startOffset = item.startOffset, endOffset = item.endOffset,
                         selectedText = item.selectedText, color = item.color, note = item.note,
                         remoteId = item.id, clientUpdatedAt = timestamp, remoteOwnerId = owner
@@ -79,7 +80,8 @@ class AnnotationRepository(
         chapterIndex: Int,
         pageIndex: Int = 0,
         chapterId: String? = null,
-        note: String? = null
+        note: String? = null,
+        characterOffset: Int? = null
     ): AnnotationEntity = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val clientId = UUID.randomUUID().toString()
@@ -92,6 +94,7 @@ class AnnotationRepository(
             chapterIndex = chapterIndex,
             // Reuse startOffset as 0-based page index for bookmarks.
             startOffset = pageIndex.coerceAtLeast(0),
+            locatorJson = characterOffset?.takeIf { it >= 0 }?.let { TextPosition(chapterIndex, it).encode() },
             note = note,
             clientUpdatedAt = now
         )
@@ -103,12 +106,13 @@ class AnnotationRepository(
     suspend fun findBookmark(
         bookId: String,
         chapterIndex: Int,
-        pageIndex: Int
+        pageIndex: Int,
+        characterRange: IntRange? = null
     ): AnnotationEntity? = withContext(Dispatchers.IO) {
         dao.listForBook(bookId).firstOrNull {
             it.type == "bookmark" &&
                 it.chapterIndex == chapterIndex &&
-                (it.startOffset ?: 0) == pageIndex.coerceAtLeast(0)
+                it.matchesBookmarkPage(chapterIndex, pageIndex, characterRange)
         }
     }
 
@@ -116,7 +120,7 @@ class AnnotationRepository(
     suspend fun dedupeBookmarks(bookId: String) = withContext(Dispatchers.IO) {
         val bookmarks = dao.listForBook(bookId).filter { it.type == "bookmark" }
         val keepIds = bookmarks
-            .groupBy { (it.chapterIndex ?: 0) to (it.startOffset ?: 0) }
+            .groupBy { it.bookmarkPositionKey() }
             .values
             .map { group -> group.maxBy { it.clientUpdatedAt }.id }
             .toSet()
@@ -208,7 +212,8 @@ class AnnotationRepository(
             clientUpdatedAtIso = Instant.ofEpochMilli(entity.clientUpdatedAt).toString(),
             chapterId = entity.chapterId, chapterIndex = entity.chapterIndex,
             startOffset = entity.startOffset, endOffset = entity.endOffset,
-            selectedText = entity.selectedText, color = entity.color, note = entity.note
+            selectedText = entity.selectedText, color = entity.color, note = entity.note,
+            locatorJson = entity.locatorJson
         )
         check(created.bookId == remoteBookId && created.clientAnnotationId == entity.clientAnnotationId)
         dao.bindRemote(entity.id, created.id, owner)

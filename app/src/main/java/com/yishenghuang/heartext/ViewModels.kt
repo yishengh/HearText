@@ -287,11 +287,12 @@ class ReaderViewModel(
     }
 
     fun addBookmark(pageIndex: Int = 0) {
+        val chapter = _chapterIndex.value
+        val range = pageCharRangeProvider?.invoke()
         viewModelScope.launch {
             val entity = bookRepository.getBook(bookId)
-            val chapter = _chapterIndex.value
             val page = pageIndex.coerceAtLeast(0)
-            val existing = annotationRepository.findBookmark(bookId, chapter, page)
+            val existing = annotationRepository.findBookmark(bookId, chapter, page, range)
             if (existing != null) {
                 annotationRepository.delete(existing)
                 _bookmarkToast.value = app.getString(R.string.toast_bookmark_removed)
@@ -300,7 +301,8 @@ class ReaderViewModel(
                     bookId = bookId,
                     remoteBookId = entity?.remoteBookId,
                     chapterIndex = chapter,
-                    pageIndex = page
+                    pageIndex = page,
+                    characterOffset = range?.first
                 )
                 _bookmarkToast.value = app.getString(R.string.toast_bookmark_added)
             }
@@ -535,6 +537,7 @@ class ReaderViewModel(
 
     /** Provides current page's chapter-local char offset for mapping to a start sentence. */
     @Volatile
+    var pageCharRangeProvider: (() -> IntRange?)? = null
     var pageCharOffsetProvider: (() -> Int?)? = null
 
     private fun startSentenceIndexForCurrentPage(): Int {

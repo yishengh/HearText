@@ -316,4 +316,5 @@
     <string name="auth_connection_failed">无法连接登录服务，请重试或继续离线使用。</string>
     <string name="error_save_progress">无法保存阅读位置，请检查存储空间后重试。</string>
     <string name="error_cover_save">无法保存此封面，请尝试其他图片。</string>
+    <string name="reader_saved_text_position">已保存的文字位置</string>
 </resources>

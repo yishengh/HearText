@@ -88,6 +88,10 @@ class LocalReaderSmokeTest {
             val saved = runBlocking { app.container.bookRepository.getBook("OL138052W") }
             com.yishenghuang.heartext.data.TextPosition.decode(saved?.locatorJson)?.character == character
         }
+        val bookmark = runBlocking {
+            app.container.annotationRepository.addBookmark("OL138052W", null, expected!!.first,
+                expected!!.second, characterOffset = character)
+        }
         val previous = app.container.readerPreferences.settings.value
         try {
             compose.runOnUiThread {
@@ -99,7 +103,30 @@ class LocalReaderSmokeTest {
                 val range = reader()!!.getCurrentPageCharacterRange()!!
                 assertTrue("Saved character must remain visible after changed typography", character in range)
             }
+            compose.runOnUiThread { reader()!!.jumpToChapter(expected!!.first + 1, 0) }
+            compose.waitUntil(30_000) {
+                var ready = false
+                compose.runOnUiThread {
+                    ready = reader()?.getCurrentLocation()?.first == expected!!.first + 1 &&
+                        reader()?.getCurrentPageCharacterRange() != null
+                }
+                ready
+            }
+            compose.onRoot().performTouchInput { click(center) }
+            val bookmarksLabel = compose.activity.getString(R.string.reader_bookmarks)
+            compose.waitUntil(5000) { compose.onAllNodesWithText(bookmarksLabel).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText(bookmarksLabel).performClick()
+            compose.onNodeWithText(compose.activity.getString(R.string.reader_saved_text_position)).performClick()
+            compose.waitUntil(30_000) {
+                var restored = false
+                compose.runOnUiThread {
+                    restored = reader()?.getCurrentLocation()?.first == expected!!.first &&
+                        reader()?.getCurrentPageCharacterRange()?.contains(character) == true
+                }
+                restored
+            }
         } finally {
+            runBlocking { app.container.annotationRepository.delete(bookmark) }
             compose.runOnUiThread { app.container.readerPreferences.update { previous } }
         }
 

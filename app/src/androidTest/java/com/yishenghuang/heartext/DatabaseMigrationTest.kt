@@ -16,7 +16,7 @@ class DatabaseMigrationTest {
     @Test fun oldestAndPreviousSchemasPreserveBooksAndAnnotations() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         check(BuildConfig.APPLICATION_ID.endsWith(".validation"))
-        for (version in listOf(1, 7, 8)) {
+        for (version in listOf(1, 7, 8, 9)) {
             val name = "migration-${UUID.randomUUID()}.db"
             val helper = FrameworkSQLiteOpenHelperFactory().create(
                 SupportSQLiteOpenHelper.Configuration.builder(context).name(name)

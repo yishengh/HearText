@@ -224,7 +224,8 @@ class HearTextApi(
         endOffset: Int? = null,
         selectedText: String? = null,
         color: String? = null,
-        note: String? = null
+        note: String? = null,
+        locatorJson: String? = null
     ): ApiAnnotation = withContext(Dispatchers.IO) {
         val payload = JSONObject()
             .put("client_annotation_id", clientAnnotationId)
@@ -238,6 +239,7 @@ class HearTextApi(
         selectedText?.let { payload.put("selected_text", it) }
         color?.let { payload.put("color", it) }
         note?.let { payload.put("note", it) }
+        locatorJson?.let { payload.put("extras", JSONObject().put("heartext_text_position", JSONObject(it))) }
         parseAnnotation(authorizedJson("POST", "/v1/annotations", payload.toString()))
     }
 
@@ -679,7 +681,8 @@ class HearTextApi(
         selectedText = json.optStringOrNull("selected_text"),
         color = json.optStringOrNull("color"),
         note = json.optStringOrNull("note"),
-        clientUpdatedAt = json.optString("client_updated_at")
+        clientUpdatedAt = json.optString("client_updated_at"),
+        locatorJson = json.optJSONObject("extras")?.optJSONObject("heartext_text_position")?.toString()
     )
 
     private fun parseOfflineVoiceList(raw: String): ApiOfflineVoiceList {
