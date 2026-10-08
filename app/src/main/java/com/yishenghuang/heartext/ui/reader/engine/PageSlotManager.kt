@@ -178,7 +178,7 @@ class PageSlotManager(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to load slot $slotIdx ch=$chapterIndex", e)
+                Log.e(TAG, "Failed to load page (${e.javaClass.simpleName})")
                 if (isCurrentRequest(slotIdx, requestToken)) {
                     slot.isLoaded = false
                     if (slotIdx == SLOT_CUR) notifyPageChanged()

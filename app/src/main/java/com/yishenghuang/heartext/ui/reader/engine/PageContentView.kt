@@ -479,7 +479,6 @@ class PageContentView(context: Context) : FrameLayout(context) {
         // 设置选区高亮
         Selection.setSelection(spannable, start, end)
         val selected = text.substring(start, end)
-        Log.d(TAG, "selectWordAt: success! text=\"$selected\" offset=$offset line=$line x=$tx y=$ty")
         return Triple(start, end, selected)
     }
 

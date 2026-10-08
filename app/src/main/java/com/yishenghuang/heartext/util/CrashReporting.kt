@@ -14,24 +14,18 @@ object CrashReporting {
         }
     }
 
-    fun log(message: String) {
-        runCatching { FirebaseCrashlytics.getInstance().log(message) }
-    }
-
-    fun setKey(key: String, value: String) {
-        runCatching { FirebaseCrashlytics.getInstance().setCustomKey(key, value) }
-    }
-
     fun record(throwable: Throwable, keys: Map<String, String> = emptyMap()) {
+        if (BuildConfig.DEBUG) return
         runCatching {
             val crashlytics = FirebaseCrashlytics.getInstance()
-            keys.forEach { (k, v) -> crashlytics.setCustomKey(k, v) }
-            crashlytics.recordException(throwable)
+            diagnosticKeys(keys).forEach { (k, v) -> crashlytics.setCustomKey(k, v) }
+            crashlytics.recordException(diagnosticException(throwable))
         }
     }
 
     /** Debug-only: enable collection then crash so Crashlytics can upload on next launch. */
     fun forceTestCrash() {
+        check(BuildConfig.DEBUG) { "Test crash is only available in debug builds" }
         runCatching {
             val crashlytics = FirebaseCrashlytics.getInstance()
             crashlytics.isCrashlyticsCollectionEnabled = true

@@ -318,7 +318,7 @@ class OfflineVoiceRepository(
             writeTokensFromPiperJson(json, tokensOut)
             Log.i(TAG, "Generated tokens.txt for ${dir.name} from ${json.name}")
         }.onFailure {
-            Log.w(TAG, "Failed to generate tokens.txt from ${json.name}: ${it.message}")
+            Log.w(TAG, "Failed to generate voice tokens (${it.javaClass.simpleName})")
         }
     }
 

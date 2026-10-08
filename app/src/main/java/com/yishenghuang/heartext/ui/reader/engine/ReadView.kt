@@ -234,11 +234,7 @@ class ReadView(context: Context) : FrameLayout(context) {
         // 🔥 长按回调保留（边缘长按时触发），执行程序化选词
         animationController.onLongPress = { x, y ->
             Log.d(TAG, "onLongPress triggered at x=$x y=$y")
-            val result = curPageView.selectWordAt(x, y)
-            if (result != null) {
-                val (pageStart, pageEnd, text) = result
-                Log.d(TAG, "selected text=\"$text\" pageOffsets=($pageStart, $pageEnd)")
-            } else {
+            if (curPageView.selectWordAt(x, y) == null) {
                 Log.w(TAG, "selectWordAt returned null at x=$x y=$y")
             }
         }
@@ -842,7 +838,6 @@ class ReadView(context: Context) : FrameLayout(context) {
                         rvTouchStartY - curPageView.top
                     )
                     if (link != null) {
-                        Log.d(TAG, "EPUB link tap: $link")
                         clearCurrentSelection()
                         callbacks?.onLinkClick(link)
                     } else if (rvIsEdgeTouch) {
@@ -1055,15 +1050,6 @@ class ReadView(context: Context) : FrameLayout(context) {
         val slot = slotManager.getSlotForView(pageView) ?: return null
         val chapterIdx = slot.chapterIndex
         val chapterStartOffset = pageView.chapterStartOffset
-
-        Log.e(
-            "ReaderSelectionDebug",
-            "getSelectionInfo view=${System.identityHashCode(pageView)} " +
-                "slotChapter=${slot.chapterIndex} slotPage=${slot.pageIndex} " +
-                "chapterStart=$chapterStartOffset local=[$selStart,$selEnd) " +
-                "absolute=[${chapterStartOffset + selStart},${chapterStartOffset + selEnd}) " +
-                "text=${text.take(80)}"
-        )
 
         val startLine = layout.getLineForOffset(selStart)
         val endLine = layout.getLineForOffset(selEnd.coerceAtMost(spannable.length - 1))

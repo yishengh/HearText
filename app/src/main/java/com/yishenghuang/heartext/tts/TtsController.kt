@@ -147,7 +147,6 @@ class TtsController(
                                 e,
                                 mapOf(
                                     "tts_engine" to "offline",
-                                    "tts_voice_id" to (voiceId ?: ""),
                                     "tts_fallback" to "system"
                                 )
                             )
@@ -178,7 +177,7 @@ class TtsController(
                 if (isCurrentGeneration(generation)) {
                     CrashReporting.record(
                         e,
-                        mapOf("tts_engine" to mode.name.lowercase(), "tts_voice_id" to (voiceId ?: ""))
+                        mapOf("tts_engine" to mode.name.lowercase())
                     )
                     _state.value = TtsPlaybackState.Error
                     _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_playback_failed)

@@ -202,3 +202,11 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 增强真实三页 PDF 测试：保存第三页，释放 publication，先恢复 Host 并验证尚不可绑定，再保存/恢复一次等待状态，然后用较旧的第二页持久位置重开 publication；最终仍恢复 Fragment 快照中的第三页，同时验证渲染器实际页码。重复绑定不重建有效导航器。共享 publication 测试验证新的初始位置进入复用实例。
 - 原占位恢复崩溃已由专项测试复现；修复后的专项通过。最终 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m7s）：Debug、Lint、45 项 JVM、36 项设备测试，0 failures / 0 skipped。日志：build/local-validation/full-recovery-verification.log。
 - 本轮通过真实 Fragment 保存状态和主动释放 publication 制造恢复顺序，不等同于操作系统实际杀进程的完整 UI 验证。仍需检查 Compose 阅读容器恢复后的绑定：程序创建的 FragmentContainerView 不经过 XML 构造中的 onContainerAvailable，现有 Fragment 视图重新挂载需进一步实测。正文字符锚点、书签定位及书籍删除重试仍属既定待办。未发布或生产写入。
+
+### 第十六轮：正文日志与听书非致命异常诊断
+
+- 删除 ReadView、PageContentView 中直接输出选中文字的三处日志，以及书内链接日志。页面加载和离线语音 token 生成失败只记录异常类型，不再输出原始异常消息/堆栈中的文件路径或解析内容。保留不含正文的分页与音频状态信息。
+- 听书非致命异常报告使用新的安全副本：仅保留异常类型和代码调用栈，丢弃原消息、cause 与 suppressed 异常。附加字段只允许固定 system/offline 引擎及 system/none 回退状态；调用方也不再传入 voice ID。移除未使用的任意日志/任意键包装接口，debug 构建不执行这条非致命上报路径；手动测试崩溃方法增加 debug 检查，本阶段未调用它。
+- 新增 JVM 测试把私人段落和文件路径放入消息、嵌套原因、suppressed 异常及任意字段，验证安全副本中不含这些内容，调用栈仍保留，非法引擎值被拒绝。没有向 Crashlytics 发送报告；这不是对第三方 SDK 全部自动日志或自动致命崩溃报告的无敏感数据保证。
+- `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m24s）：Debug、Lint、46 项 JVM、36 项设备测试，0 failures / 0 skipped。随后仅清理日志删除后遗留的无用解构变量和调用方 voice ID 字段，再执行 `tools/verify-local.ps1`（1m45s），Debug/JVM/Lint 通过；这两处清理后没有重复设备测试。日志分别为 build/local-validation/privacy-verification.log 与 privacy-final-build.log。
+- 项目源码复查已无选中文字/书内链接日志和直接 recordException(throwable) 调用。尚未完成的阅读容器恢复、字符锚点、书签和离线删除重试保持原范围；未发布、推送或执行生产写入。
