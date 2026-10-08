@@ -389,3 +389,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 首轮在设备测试中途 emulator-5582 从 ADB 消失；读取系统进程确认无模拟器进程，退出原因未确认，失败日志 storage-cleanup-verification.log 保留且不计作通过。只重启本任务 Small_Tablet/5582，确认启动完成后重跑。
 - 最终完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（1m46s）：Debug、Lint、54 项 JVM、57 项设备测试，0 failures / 0 skipped。日志：build/local-validation/storage-cleanup-retry.log。本轮模拟器 wrapper PID 20456 仅用于记录，任何后续操作前必须重新验证所属进程。
 - 旧的无引用字体/封面仍保留，不将其当作普通缓存删除；没有新增自动文件回收。清理页未进行人工点击验收，真实缓存行为已设备测试。其他既定多语言及生命周期审查继续推进，未发布、推送或生产写入。
+
+### 第三十七轮：语言切换后的长期 Context 与语音提示
+
+- Application 启动时包装资源 Context，原有 ViewModel/语音组件直接 app.getString 会继续使用启动语言。新增按当前 app_prefs 解析资源的 localizedString，书库/书城/个人资料/阅读/播放器反馈、TTS 提示及阅读时长格式使用当前选择，不持有 Activity。
+- SYSTEM 显式采用系统资源的 locale 列表，避免从先前应用语言覆盖过的 Locale.getDefault 推断系统语言。Activity 包装及中文 UI 判定共享这一规则。参考 [Android 应用语言文档](https://developer.android.com/guide/topics/resources/app-languages) 对非 Activity Context 的兼容性说明；本项目保留现有偏好作为语言来源。
+- 播放协调器的缺书、PDF 禁用、空正文、焦点失败、系统/离线标签改为四语言资源，加载失败不再显示原始异常。取消加载继续传播；章节及 voiceId 在取得音频焦点后才替换，避免新启动失败破坏原会话内部数据。
+- 新设备测试验证固定英语的旧 Context 在偏好切换后读取英、中、法、西，并在 SYSTEM 恢复系统资源；另通过实际 MainActivity/AppCompat 语言切换，确认四种语言下 Activity 与同一个长期 Application 的新提示一致，结束后恢复原语言。
+- 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m17s）：Debug、Lint、54 项 JVM、59 项设备测试，0 failures / 0 skipped。日志：build/local-validation/locale-consistency-verification.log。
+- 本轮覆盖新生成提示及实际资源切换，不声称逐屏人工翻译校对或自动重译此前已经生成的字符串状态；设备为 API 35，旧 API 设备仍未运行。下一步按既定清单核对剩余生命周期验证和交付证据，不新增产品需求。未发布、推送或生产写入。

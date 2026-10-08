@@ -1,5 +1,7 @@
 package com.yishenghuang.heartext.tts
 
+import com.yishenghuang.heartext.util.localizedString
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -111,7 +113,7 @@ class TtsController(
             TtsMode.OFFLINE -> {
                 if (voiceId.isNullOrBlank()) {
                     _state.value = TtsPlaybackState.Error
-                    _message.value = app.getString(com.yishenghuang.heartext.R.string.toast_pick_offline_voice)
+                    _message.value = app.localizedString(com.yishenghuang.heartext.R.string.toast_pick_offline_voice)
                     return
                 }
             }
@@ -155,7 +157,7 @@ class TtsController(
                                     "tts_fallback" to "system"
                                 )
                             )
-                            _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_system_fallback)
+                            _message.value = app.localizedString(com.yishenghuang.heartext.R.string.tts_system_fallback)
                             stopEnginesOnly()
                             activeEngine = systemEngine
                             if (!isActive || !isCurrentGeneration(generation)) break
@@ -185,7 +187,7 @@ class TtsController(
                         mapOf("tts_engine" to mode.name.lowercase())
                     )
                     _state.value = TtsPlaybackState.Error
-                    _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_playback_failed)
+                    _message.value = app.localizedString(com.yishenghuang.heartext.R.string.tts_playback_failed)
                 }
             }
         }
@@ -321,7 +323,7 @@ class TtsController(
             job?.cancel()
             stopEnginesOnly()
             _state.value = TtsPlaybackState.Error
-            _message.value = app.getString(com.yishenghuang.heartext.R.string.tts_playback_failed)
+            _message.value = app.localizedString(com.yishenghuang.heartext.R.string.tts_playback_failed)
             return
         }
         if (job?.isActive != true && sentences.isNotEmpty() && sourceText.isNotBlank()) {

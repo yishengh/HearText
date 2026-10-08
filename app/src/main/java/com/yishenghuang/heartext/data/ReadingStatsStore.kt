@@ -1,5 +1,7 @@
 package com.yishenghuang.heartext.data
 
+import com.yishenghuang.heartext.util.localizedString
+
 import android.content.Context
 import com.yishenghuang.heartext.R
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,9 +57,9 @@ data class LibraryStats(
         val hours = (totalMin / 60L).toInt()
         val minutes = (totalMin % 60L).toInt()
         return when {
-            totalMin <= 0L -> context.getString(R.string.profile_time_zero_min)
-            hours <= 0 -> context.getString(R.string.profile_time_mins, minutes)
-            else -> context.getString(R.string.profile_time_hours_mins, hours, minutes)
+            totalMin <= 0L -> context.localizedString(R.string.profile_time_zero_min)
+            hours <= 0 -> context.localizedString(R.string.profile_time_mins, minutes)
+            else -> context.localizedString(R.string.profile_time_hours_mins, hours, minutes)
         }
     }
 }

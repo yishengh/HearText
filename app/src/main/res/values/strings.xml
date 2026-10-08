@@ -335,4 +335,6 @@
     <string name="storage_other">Other app data</string>
     <string name="storage_failed">Could not complete the storage operation. Please try again.</string>
     <string name="storage_clearing">Clearing…</string>
+    <string name="tts_no_content">This book has no text to read aloud.</string>
+    <string name="tts_audio_focus_failed">Audio is currently unavailable. Please try again.</string>
 </resources>

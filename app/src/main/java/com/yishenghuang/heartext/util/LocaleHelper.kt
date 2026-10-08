@@ -17,14 +17,27 @@ object LocaleHelper {
         AppLanguage.ES -> "es"
     }
 
-    /** Wrap Activity/Application context so resource lookups use the chosen locale. */
-    fun wrap(context: Context, language: AppLanguage): Context {
-        val tag = languageTag(language) ?: return context
-        val locale = Locale.forLanguageTag(tag)
-        Locale.setDefault(locale)
+    private fun locales(language: AppLanguage): LocaleList = languageTag(language)?.let {
+        LocaleList(Locale.forLanguageTag(it))
+    } ?: android.content.res.Resources.getSystem().configuration.locales
+
+    private fun resourceContext(context: Context, language: AppLanguage): Context {
         val config = Configuration(context.resources.configuration)
-        config.setLocales(LocaleList(locale))
+        config.setLocales(locales(language))
         return context.createConfigurationContext(config)
+    }
+
+    /** Resolve against current preferences, including from a long-lived wrapped Application. */
+    fun currentContext(context: Context): Context {
+        val raw = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .getString("app_language", AppLanguage.SYSTEM.name)
+        val language = runCatching { AppLanguage.valueOf(raw.orEmpty()) }.getOrDefault(AppLanguage.SYSTEM)
+        return resourceContext(context, language)
+    }
+
+    fun wrap(context: Context, language: AppLanguage): Context {
+        locales(language).get(0)?.let(Locale::setDefault)
+        return resourceContext(context, language)
     }
 
     fun apply(language: AppLanguage) {
@@ -38,13 +51,10 @@ object LocaleHelper {
     fun isChineseUi(language: AppLanguage): Boolean = when (language) {
         AppLanguage.ZH -> true
         AppLanguage.EN, AppLanguage.FR, AppLanguage.ES -> false
-        AppLanguage.SYSTEM -> {
-            val tag = AppCompatDelegate.getApplicationLocales().toLanguageTags()
-            if (tag.isNotBlank()) {
-                tag.startsWith("zh")
-            } else {
-                Locale.getDefault().language.startsWith("zh")
-            }
-        }
+        AppLanguage.SYSTEM -> android.content.res.Resources.getSystem()
+            .configuration.locales.get(0)?.language?.startsWith("zh") == true
     }
 }
+
+fun Context.localizedString(@androidx.annotation.StringRes id: Int, vararg args: Any): String =
+    LocaleHelper.currentContext(this).getString(id, *args)

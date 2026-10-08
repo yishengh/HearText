@@ -335,4 +335,6 @@
     <string name="storage_other">Autres données</string>
     <string name="storage_failed">Impossible de terminer cette opération. Veuillez réessayer.</string>
     <string name="storage_clearing">Nettoyage…</string>
+    <string name="tts_no_content">Ce livre ne contient aucun texte à lire à voix haute.</string>
+    <string name="tts_audio_focus_failed">Le son est indisponible pour le moment. Veuillez réessayer.</string>
 </resources>

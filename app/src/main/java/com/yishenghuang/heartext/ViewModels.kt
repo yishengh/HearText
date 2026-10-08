@@ -1,5 +1,7 @@
 package com.yishenghuang.heartext
 
+import com.yishenghuang.heartext.util.localizedString
+
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -48,7 +50,7 @@ class LibraryViewModel(
             runCatching { bookRepository.ensureSampleBooks() }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
-                    _error.value = app.getString(R.string.error_library_load)
+                    _error.value = app.localizedString(R.string.error_library_load)
                 }
         }
     }
@@ -63,7 +65,7 @@ class LibraryViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = app.getString(R.string.error_import_failed)
+                _error.value = app.localizedString(R.string.error_import_failed)
             }
         }
     }
@@ -72,9 +74,9 @@ class LibraryViewModel(
         viewModelScope.launch {
             try {
                 if (bookRepository.deleteBook(bookId) == com.yishenghuang.heartext.data.BookDeletionResult.REMOTE_PENDING)
-                    _error.value = app.getString(R.string.delete_remote_pending)
+                    _error.value = app.localizedString(R.string.delete_remote_pending)
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { _error.value = app.getString(R.string.error_delete_failed) }
+            catch (_: Exception) { _error.value = app.localizedString(R.string.error_delete_failed) }
         }
     }
 
@@ -251,7 +253,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             val entity = bookRepository.getBook(bookId)
             if (entity == null) {
-                _error.value = app.getString(R.string.error_book_not_found)
+                _error.value = app.localizedString(R.string.error_book_not_found)
                 _loading.value = false
                 return@launch
             }
@@ -273,7 +275,7 @@ class ReaderViewModel(
                         }
                         .onFailure {
                             if (it is kotlinx.coroutines.CancellationException) throw it
-                            _error.value = app.getString(R.string.error_load_chapters)
+                            _error.value = app.localizedString(R.string.error_load_chapters)
                         }
                     _loading.value = false
                 }
@@ -288,7 +290,7 @@ class ReaderViewModel(
                         }
                         .onFailure {
                             if (it is kotlinx.coroutines.CancellationException) throw it
-                            _error.value = app.getString(R.string.error_open_readium)
+                            _error.value = app.localizedString(R.string.error_open_readium)
                             _loading.value = false
                         }
                 }
@@ -326,23 +328,23 @@ class ReaderViewModel(
             try {
                 val entity = bookRepository.getBook(bookId)
                 if (entity == null) {
-                    _bookmarkToast.value = app.getString(R.string.error_book_not_found)
+                    _bookmarkToast.value = app.localizedString(R.string.error_book_not_found)
                     return@launch
                 }
                 val page = pageIndex.coerceAtLeast(0)
                 val existing = annotationRepository.findBookmark(bookId, chapter, page, range)
                 if (existing != null) {
                     annotationRepository.delete(existing)
-                    _bookmarkToast.value = app.getString(R.string.toast_bookmark_removed)
+                    _bookmarkToast.value = app.localizedString(R.string.toast_bookmark_removed)
                 } else {
                     annotationRepository.addBookmark(
                         bookId = bookId, remoteBookId = entity.remoteBookId,
                         chapterIndex = chapter, pageIndex = page, characterOffset = range?.first
                     )
-                    _bookmarkToast.value = app.getString(R.string.toast_bookmark_added)
+                    _bookmarkToast.value = app.localizedString(R.string.toast_bookmark_added)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { _bookmarkToast.value = app.getString(R.string.error_bookmark_save) }
+            catch (_: Exception) { _bookmarkToast.value = app.localizedString(R.string.error_bookmark_save) }
             finally { _bookmarkBusy.value = false }
         }
     }
@@ -432,7 +434,7 @@ class ReaderViewModel(
                     query = q,
                     limit = SEARCH_RESULT_LIMIT,
                     blankChapterTitle = { index ->
-                        app.getString(R.string.reader_chapter_n, index + 1)
+                        app.localizedString(R.string.reader_chapter_n, index + 1)
                     }
                 )
             }
@@ -567,7 +569,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             val path = fontStore.importFromUri(uri)
             if (path == null) {
-                _error.value = app.getString(R.string.error_import_failed)
+                _error.value = app.localizedString(R.string.error_import_failed)
                 return@launch
             }
             readerPreferences.update {
@@ -643,7 +645,7 @@ class ReaderViewModel(
         persistenceScope.launch {
             try { write() }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { _error.value = app.getString(R.string.error_save_progress) }
+            catch (_: Exception) { _error.value = app.localizedString(R.string.error_save_progress) }
         }
     }
 
@@ -830,7 +832,7 @@ class PlayerViewModel(
 
     fun cycleSpeechRate(): Float {
         val next = playbackCoordinator.cycleSpeechRate()
-        _toast.value = app.getString(R.string.toast_speed, formatSpeed(next))
+        _toast.value = app.localizedString(R.string.toast_speed, formatSpeed(next))
         return next
     }
 
@@ -850,14 +852,14 @@ class PlayerViewModel(
                 selectedOfflineVoiceId = null
             )
         }
-        restartWithPreferences(app.getString(R.string.toast_switched_system))
+        restartWithPreferences(app.localizedString(R.string.toast_switched_system))
     }
 
     fun selectOfflineVoice(voiceId: String) {
         val id = voiceId.trim()
         if (id.isBlank()) return
         if (!offlineVoices.isInstalled(id)) {
-            _toast.value = app.getString(R.string.toast_need_offline_voice)
+            _toast.value = app.localizedString(R.string.toast_need_offline_voice)
             return
         }
         readerPreferences.update {
@@ -866,7 +868,7 @@ class PlayerViewModel(
                 selectedOfflineVoiceId = id
             )
         }
-        restartWithPreferences(app.getString(R.string.toast_switched_offline))
+        restartWithPreferences(app.localizedString(R.string.toast_switched_offline))
     }
 
     private fun restartWithPreferences(toast: String) {

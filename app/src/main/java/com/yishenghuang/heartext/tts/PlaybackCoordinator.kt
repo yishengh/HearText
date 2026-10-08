@@ -1,5 +1,8 @@
 package com.yishenghuang.heartext.tts
 
+import com.yishenghuang.heartext.util.localizedString
+import com.yishenghuang.heartext.R
+
 import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
@@ -141,29 +144,30 @@ class PlaybackCoordinator(
         loadJob = scope.launch {
             val book = bookRepository.getBook(bookId)
             if (book == null) {
-                _session.update { it.copy(message = "Book not found") }
+                _session.update { it.copy(message = app.localizedString(R.string.error_book_not_found)) }
                 return@launch
             }
             if (book.format == BookFormat.PDF) {
-                _session.update { it.copy(message = "Listening is not available for PDF") }
+                _session.update { it.copy(message = app.localizedString(R.string.reader_pdf_no_listen)) }
                 return@launch
             }
             val loaded = runCatching { bookRepository.loadChapterTexts(book) }.getOrElse { err ->
-                _session.update { it.copy(message = err.message ?: "Unable to load chapters") }
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                _session.update { it.copy(message = app.localizedString(R.string.error_load_chapters)) }
                 return@launch
             }
             if (loaded.isEmpty()) {
-                _session.update { it.copy(message = "Nothing to read") }
+                _session.update { it.copy(message = app.localizedString(R.string.tts_no_content)) }
+                return@launch
+            }
+            val index = chapterIndex.coerceIn(0, loaded.lastIndex)
+            val chapter = loaded[index]
+            if (!focusHelper.requestFocus()) {
+                _session.update { it.copy(message = app.localizedString(R.string.tts_audio_focus_failed)) }
                 return@launch
             }
             chapters = loaded
             this@PlaybackCoordinator.voiceId = voiceId
-            val index = chapterIndex.coerceIn(0, loaded.lastIndex)
-            val chapter = loaded[index]
-            if (!focusHelper.requestFocus()) {
-                _session.update { it.copy(message = "Unable to get audio focus") }
-                return@launch
-            }
             tts.configure(mode, voiceId)
             tts.setSpeechRate(readerPreferences.settings.value.ttsSpeed)
             tts.setVolume(1f)
@@ -435,7 +439,7 @@ class PlaybackCoordinator(
     }
 
     private fun voiceLabelFor(mode: TtsMode): String = when (mode) {
-        TtsMode.OFFLINE -> "Offline"
-        TtsMode.SYSTEM -> "System"
+        TtsMode.OFFLINE -> app.localizedString(R.string.voice_summary_offline)
+        TtsMode.SYSTEM -> app.localizedString(R.string.voice_summary_system)
     }
 }

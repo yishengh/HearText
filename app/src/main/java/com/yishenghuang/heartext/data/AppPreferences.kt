@@ -4,7 +4,6 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
 
 enum class AppLanguage {
     SYSTEM,
@@ -30,9 +29,5 @@ class AppPreferences(context: Context) {
     }
 
     /** Whether the UI should treat itself as Chinese (for reader script toggle, etc.). */
-    fun isChineseUi(): Boolean = when (_language.value) {
-        AppLanguage.ZH -> true
-        AppLanguage.EN, AppLanguage.FR, AppLanguage.ES -> false
-        AppLanguage.SYSTEM -> Locale.getDefault().language.startsWith("zh")
-    }
+    fun isChineseUi(): Boolean = com.yishenghuang.heartext.util.LocaleHelper.isChineseUi(_language.value)
 }

@@ -1,5 +1,7 @@
 package com.yishenghuang.heartext
 
+import com.yishenghuang.heartext.util.localizedString
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -41,7 +43,7 @@ class StoreViewModel(
 
     private val search = CatalogSearch(viewModelScope,
         fetch = { q, category, page -> catalog.search(q, category, page, PAGE_SIZE) },
-        errorMessage = { app.getString(R.string.error_store_load) })
+        errorMessage = { app.localizedString(R.string.error_store_load) })
     val results = search.state.map { it.items }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val resultsTotal = search.state.map { it.total }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     val loadingMore = search.state.map { it.loadingMore }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -79,7 +81,7 @@ class StoreViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                sectionError.value = app.getString(R.string.error_store_load)
+                sectionError.value = app.localizedString(R.string.error_store_load)
             } finally {
                 if (generation == refreshGeneration) sectionLoading.value = false
             }
@@ -153,7 +155,7 @@ class CatalogDetailViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                _error.value = app.getString(R.string.toast_download_failed)
+                _error.value = app.localizedString(R.string.toast_download_failed)
             } finally {
                 _busy.value = false
             }
@@ -279,7 +281,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             runCatching {
                 _user.value = api.updateMe(displayName = name.trim())
-                _message.value = app.getString(R.string.toast_profile_updated)
+                _message.value = app.localizedString(R.string.toast_profile_updated)
             }.onFailure { _message.value = it.message }
         }
     }
@@ -305,11 +307,11 @@ class ProfileViewModel(
                     )
                 }
                 refreshInstalled()
-                _message.value = app.getString(R.string.toast_voice_installed, voice.name)
+                _message.value = app.localizedString(R.string.toast_voice_installed, voice.name)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _message.value = app.getString(R.string.toast_download_failed)
+                _message.value = app.localizedString(R.string.toast_download_failed)
             } finally {
                 _downloadProgress.value = null
                 _busy.value = false
@@ -324,7 +326,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             refreshInstalled()
             if (!isInstalled(voice.id)) {
-                _message.value = app.getString(R.string.toast_need_full_offline)
+                _message.value = app.localizedString(R.string.toast_need_full_offline)
                 return@launch
             }
             app.container.readerPreferences.update {
@@ -333,7 +335,7 @@ class ProfileViewModel(
                     selectedOfflineVoiceId = voice.id
                 )
             }
-            _message.value = app.getString(R.string.toast_selected_offline, voice.name)
+            _message.value = app.localizedString(R.string.toast_selected_offline, voice.name)
         }
     }
 
@@ -344,7 +346,7 @@ class ProfileViewModel(
                 selectedOfflineVoiceId = null
             )
         }
-        _message.value = app.getString(R.string.toast_selected_system)
+        _message.value = app.localizedString(R.string.toast_selected_system)
     }
 
     private val _samplePlayingId = MutableStateFlow<String?>(null)
@@ -367,7 +369,7 @@ class ProfileViewModel(
                 throw cancelled
             } catch (failure: Exception) {
                 _samplePlayingId.value = null
-                _message.value = app.getString(R.string.tts_playback_failed)
+                _message.value = app.localizedString(R.string.tts_playback_failed)
             }
         }
     }
@@ -399,12 +401,12 @@ class ProfileViewModel(
             try {
                 api.deleteMe()
                 _user.value = null
-                _message.value = app.getString(R.string.toast_account_deleted)
+                _message.value = app.localizedString(R.string.toast_account_deleted)
                 onDeleted()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _message.value = app.getString(R.string.error_account_delete)
+                _message.value = app.localizedString(R.string.error_account_delete)
             } finally {
                 deletingAccount = false
             }
