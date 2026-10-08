@@ -84,6 +84,21 @@ class OfflineVoiceRepositoryTest {
         val nativeRepository = OfflineVoiceRepository(context, HearTextApi(auth, endpoint = endpoint), auth)
         nativeRepository.downloadAndInstall(voice("local-amy", checksum))
         assertTrue(nativeRepository.isInstalled("local-amy"))
+        val originalData = nativeRepository.resolvePack("local-amy")!!.dataDir!!
+        val shared = File(root, "offline_voices/_shared/espeak-ng-data")
+        val backup = File(shared.parentFile, ".espeak-ng-data.backup")
+        shared.parentFile!!.mkdirs()
+        // Simulate process death after the old shared directory was renamed to backup.
+        assertTrue(originalData.renameTo(backup))
+        val recovered = nativeRepository.resolvePack("local-amy")!!
+        assertEquals(shared.canonicalFile, recovered.dataDir!!.canonicalFile)
+        assertTrue(recovered.isPlayable)
+        assertFalse(backup.exists())
+        // The explicit installer path must also recover locally, without fetching the archive.
+        assertTrue(shared.renameTo(backup))
+        withTimeout(2_000) { nativeRepository.ensureSharedEspeakNgData() }
+        assertTrue(shared.resolve("phontab").length() > 0)
+        assertFalse(backup.exists())
         val engine = OfflineTtsEngine(context, nativeRepository)
         try {
             withTimeout(60_000) { engine.speak("Local offline speech test.", "local-amy") }

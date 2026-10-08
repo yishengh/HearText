@@ -210,3 +210,9 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新增 JVM 测试把私人段落和文件路径放入消息、嵌套原因、suppressed 异常及任意字段，验证安全副本中不含这些内容，调用栈仍保留，非法引擎值被拒绝。没有向 Crashlytics 发送报告；这不是对第三方 SDK 全部自动日志或自动致命崩溃报告的无敏感数据保证。
 - `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m24s）：Debug、Lint、46 项 JVM、36 项设备测试，0 failures / 0 skipped。随后仅清理日志删除后遗留的无用解构变量和调用方 voice ID 字段，再执行 `tools/verify-local.ps1`（1m45s），Debug/JVM/Lint 通过；这两处清理后没有重复设备测试。日志分别为 build/local-validation/privacy-verification.log 与 privacy-final-build.log。
 - 项目源码复查已无选中文字/书内链接日志和直接 recordException(throwable) 调用。尚未完成的阅读容器恢复、字符锚点、书签和离线删除重试保持原范围；未发布、推送或执行生产写入。
+
+### 第十七轮：共享离线语音资源备份恢复
+
+- 共享 espeak-ng-data 路径在检查可用性前执行与语音包相同的同步备份恢复。此前只有单个语音目录恢复，若共享目录替换中断而只留下 .espeak-ng-data.backup，解析语音会误判不可用，ensureSharedEspeakNgData 还会尝试下载。
+- 扩展现有真实官方模型测试：将有效数据目录改名为共享备份，验证 resolvePack 恢复共享目录、识别模型可播放；再次制造备份状态，验证 ensureSharedEspeakNgData 在本地恢复，然后使用恢复后的真实资源合成并执行暂停/恢复/停止。没有用空模型或仅检查目录存在来代替合成验证。
+- 完整命令 `tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture` 通过（1m9s）：Debug、Lint、46 项 JVM、36 项设备测试，0 failures / 0 skipped。日志：build/local-validation/shared-voice-recovery.log。共享资源恢复遗漏已关闭；既定其他待办保持不变。未发布、推送或生产写入。

@@ -75,7 +75,7 @@ class OfflineVoiceRepository(
         get() = File(root, "_shared").also { it.mkdirs() }
 
     private val sharedEspeakDir: File
-        get() = File(sharedDir, "espeak-ng-data")
+        get() = File(sharedDir, "espeak-ng-data").also(VoicePackageFiles::recover)
 
     private val espeakMutex = Mutex()
     private val sampleMutex = Mutex()
