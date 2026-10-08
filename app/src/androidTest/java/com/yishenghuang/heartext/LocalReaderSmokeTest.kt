@@ -131,6 +131,44 @@ class LocalReaderSmokeTest {
             compose.runOnUiThread { app.container.readerPreferences.update { previous } }
         }
 
+        // Exercise the search sheet and result callback, not just the native jump method.
+        val chapters = runBlocking {
+            app.container.bookRepository.loadChapterTexts(
+                app.container.bookRepository.getBook("OL138052W")!!)
+        }
+        val query = "rabbit"
+        val targetChapter = chapters.indexOfFirst { it.plainText.contains(query, ignoreCase = true) }
+        assertTrue(targetChapter >= 0)
+        val targetOffset = chapters[targetChapter].plainText.indexOf(query, ignoreCase = true)
+        compose.onRoot().performTouchInput { click(center) }
+        val searchLabel = compose.activity.getString(R.string.reader_search)
+        compose.onNodeWithContentDescription(searchLabel).performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("zzzz_no_matching_passage_zzzz")
+        val emptyLabel = compose.activity.getString(R.string.reader_search_empty)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(emptyLabel).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(hasSetTextAction()).performTextReplacement(query)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(query, substring = true, ignoreCase = true) and
+                hasClickAction() and !hasSetTextAction()).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onAllNodes(hasText(query, substring = true, ignoreCase = true) and
+            hasClickAction() and !hasSetTextAction())[0].performClick()
+        try { compose.waitUntil(30_000) {
+            var atMatch = false
+            compose.runOnUiThread {
+                atMatch = reader()?.getCurrentLocation()?.first == targetChapter &&
+                    reader()?.getCurrentPageCharacterRange()?.contains(targetOffset) == true
+            }
+            atMatch
+        } } catch (failure: Throwable) {
+            compose.runOnUiThread {
+                throw AssertionError("Search expected chapter=$targetChapter character=$targetOffset; " +
+                    "actual=${reader()?.getCurrentLocation()} range=${reader()?.getCurrentPageCharacterRange()}", failure)
+            }
+        }
+
     }
 
     private fun waitForReader() {

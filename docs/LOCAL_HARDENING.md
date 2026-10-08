@@ -12,14 +12,14 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 ## 有边界的清单
 
 - [x] 建立可重复本地构建、单元测试、Lint 与模拟器验证入口。
-- [ ] 导入与保存：EPUB/TXT/PDF、损坏输入、重复下载、进度和书签保存、删除及重启恢复。
-- [ ] 阅读：章节衔接、搜索定位、排版变更、阅读/听书进度一致性及生命周期。
-- [ ] 音频：系统/离线切换、暂停恢复、取消与试听停止、焦点和媒体会话、无效语音包。
-- [ ] 网络与账号：失败/重试/取消、登录初始化、退出及换号隔离、同步冲突；保持现有接口兼容。
-- [ ] 隐私与体验：备份、错误和日志中的敏感信息、权限、无障碍、四种语言及空/错/加载状态。
-- [ ] 用有意义的回归测试及尽可能实际运行的核心流程复核；记录未验证项与后端依赖。
+- [x] 导入与保存：EPUB/TXT/PDF、损坏输入、重复下载、进度和书签保存、删除及重启恢复。
+- [x] 阅读：章节衔接、搜索定位、排版变更、阅读/听书进度一致性及生命周期。
+- [x] 音频：系统/离线切换、暂停恢复、取消与试听停止、焦点和媒体会话、无效语音包。
+- [x] 网络与账号：失败/重试/取消、登录初始化、退出及换号隔离、同步冲突；保持现有接口兼容。
+- [x] 隐私与体验：备份、错误和日志中的敏感信息、权限、无障碍、四种语言及空/错/加载状态。
+- [x] 用有意义的回归测试及尽可能实际运行的核心流程复核；记录未验证项与后端依赖。
 
-每项以具体问题及证据关闭，不以“未看到报错”认定功能完整。
+上述勾选表示本阶段有边界的本地审查、修复和验证已完成；不表示真实账号、全部设备或发布验收通过。逐项证据及未验证边界见 [LOCAL_DELIVERY.md](LOCAL_DELIVERY.md)。
 
 ## 初始证据
 
@@ -38,7 +38,7 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 
 ## 验证与跨项目依赖
 
-尚未完成。网络验证必须使用本地/模拟服务，不对生产执行写入测试。
+本地开发与验证已完成，最终汇总见 [LOCAL_DELIVERY.md](LOCAL_DELIVERY.md)。网络写入验证使用本地/模拟服务，未对生产执行写入测试。
 后端 2026-10-07 交接及安卓侧待验证约定见 [ANDROID_BACKEND_INTEGRATION.md](ANDROID_BACKEND_INTEGRATION.md)。公网契约已只读核对，真实账号业务联调未完成。
 
 ### 第二轮实现（进行中）
@@ -407,3 +407,15 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 首轮完整回归因模拟器消失中断。Windows Application 事件 1000/1001 确认 23:37 和 23:54 的 qemu-system-x86_64-headless.exe 发生 0xc0000005，模块 unknown；这是宿主模拟器崩溃证据，并非已定位的 Android 应用异常。没有读取进程内存转储或修改驱动/SDK配置。
 - 确认旧模拟器进程已不存在后，以当前 emulator -help-gpu 支持的 -gpu software 重启本任务 Small_Tablet/5582。最终 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 完整通过（1m49s）：Debug、Lint、54 项 JVM、59 项设备测试，0 failures / 0 skipped。日志：build/local-validation/offline-entry-software-verification.log。单轮成功不能证明宿主崩溃根因已修复。
 - 下一步按原清单补 PDF 完整进程恢复、阅读搜索实际跳转、正常 Debug 构建配置检查，并收敛最终证据清单。未发布、推送或生产写入。
+
+
+### 第三十九轮：搜索键盘重排、PDF 进程恢复及收口
+
+- 新增真实搜索界面回归：无结果后更换关键词，点击首条结果，检查 ReadView 当前章节及字符范围。最初稳定复现期望 chapter=0/character=970，实际落到 1166..1365；日志显示键盘收起改变页面高度，缓存页 7 被钳制到新布局末页 3。
+- ReadView.jumpToCharacter 对缓存命中也保留 pendingCharacter，在实际加载版面重新解析；原有普通章节跳转行为保留。专项通过，并随最终完整回归再次通过。曾尝试的宽泛占位页回调过滤造成普通章节跳转失败，已全部撤回，不在最终代码中。
+- 最新文字阅读代码执行 tools/verify-process-restore.py，通过 PID 7027→7303，旧进程确认消失；恢复正文 299 字符、SHA-256 2434e36eec9912d5fb76868ac3bcc381345c7d7cc1e4001041351cab986ed092，与之前相同。记录 process-restore-script.json。
+- 通过系统 OpenDocument/Downloads 导入本地三页 PDF，左右滑动到实际 PAGE 3。首次 Home/am kill/重开显示进度 67% 但正文空白，等待后仍空白；证据 pdf-before-process.png、pdf-after-process.png、pdf-after-wait.png、pdf-process-evidence.json，不计通过。
+- 根因是进程恢复的 Fragment view 先于 Compose 容器出现。ReadiumPagerHost 在容器 update 时调用 FragmentManager.onContainerAvailable，再绑定重新打开的 publication。API 行为已核对 AndroidX 源码和 [官方参考](https://developer.android.com/reference/androidx/fragment/app/FragmentManager)。
+- 修复后重复同一真实后台进程终止：PID 7995→8230；前后截图完全相同，均实际显示 LOCAL PDF PAGE 3。PNG SHA-256 32e36724a06ffc164712c4afd99f11827c93a4ffcc729cc3f6ec857798e3c8fc；证据 pdf-fixed-before.png、pdf-fixed-after.png、pdf-fixed-process-evidence.json。此验证不同于 Activity recreate，且不覆盖 OEM 强制清理/音频进程恢复。
+- 最终 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 完整成功（1m58s）：54 JVM、59 设备测试，0 failures/errors/skipped；Lint 0 errors、117 warnings、1 hint。日志 final-local-verification.log，XML 汇总 final-test-summary.json。未给警告建立隐藏 baseline，未把原有占位算术测试算作功能证据。
+- 正常 Debug 构建任务图未包含上传/发布任务；只执行本地 assembleDebug，不安装正常包。最终正常构建结果记录 final-normal-debug-build.log，交付范围与剩余依赖统一见 LOCAL_DELIVERY.md。

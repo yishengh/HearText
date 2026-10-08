@@ -765,6 +765,9 @@ private fun ReadiumPagerHost(
         update = { container ->
             val tag = "readium_$bookId"
             val fm = activity.supportFragmentManager
+            // Restored fragments can create their views before the publication has
+            // reopened and Compose adds this container. Attach that waiting view now.
+            fm.onContainerAvailable(container)
             val existing = fm.findFragmentByTag(tag) as? ReadiumHostFragment
             if (existing != null) {
                 existing.bindAvailableSession()

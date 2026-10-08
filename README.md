@@ -77,6 +77,8 @@ Reports are under `build/validation-app/reports/`; the isolated APK is at
 `build/validation-app/outputs/apk/debug/app-debug.apk`. The verification script uses
 a single-use Gradle daemon to avoid retained Windows test JAR locks. Current scope and evidence are in
 [`docs/LOCAL_HARDENING.md`](docs/LOCAL_HARDENING.md).
+The completed local scope, final results, and remaining integration/device checks are in
+[`docs/LOCAL_DELIVERY.md`](docs/LOCAL_DELIVERY.md).
 
 To also verify installation and synthesis with an official sherpa-onnx Piper model:
 

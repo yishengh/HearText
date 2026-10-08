@@ -587,10 +587,12 @@ class ReadView(context: Context) : FrameLayout(context) {
             targetOffset >= page.startCharOffset && targetOffset < page.endCharOffset
         } ?: -1
 
+        // Closing search also closes the IME and changes page dimensions. Even a cached
+        // page number is provisional; resolve the character again in the loaded layout.
+        slotManager.setPendingCharacter(chapterIndex, targetOffset)
         if (cachedPage >= 0) {
             slotManager.jumpTo(chapterIndex, cachedPage)
         } else {
-            slotManager.setPendingCharacter(chapterIndex, targetOffset)
             layoutEngine.invalidateChapter(chapterIndex)
             slotManager.jumpTo(chapterIndex, 0)
         }
