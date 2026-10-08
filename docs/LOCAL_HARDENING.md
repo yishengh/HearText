@@ -325,3 +325,11 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试通过实际书库和详情页打开生成的三页 PDF，跳转第三页并等待 Room 保存，然后重建 MainActivity，检查真实 PDFView 当前页仍为第三页且宿主视图已经挂载。
 - 该测试未复现此前担心的 Fragment 容器重新挂载问题，因此没有添加不必要的生产修补。Activity 重建不等同于系统杀进程恢复；后者仍未验证。
 - 专项测试通过；最终 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（1m44s）：Debug、Lint、52 项 JVM、45 项设备测试，0 failures / 0 skipped。日志：build/local-validation/pdf-ui-full-verification.log。未发布、推送或执行生产写入。
+
+### 第三十轮：封面补全并发保护
+
+- 自动补全缺失封面改用独立随机文件，并以书籍文件路径、创建时间、原封面地址和来源作条件提交。补全期间用户换图、删除书籍或其他补全已经提交时，拒绝迟到结果并清理本次图片，不覆盖用户封面或重建已删除记录。
+- 短数据库提交及结果标记不可取消；生成阶段取消仍清理独立文件。EPUB 解析补全不再吞掉取消异常。未增加数据库字段或改动后端。
+- 新设备测试在提交前分别插入用户换图和删除，验证用户封面保留、删除记录不复活、补全图片没有残留；正常补全仍成功。
+- 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m7s）：Debug、Lint、52 项 JVM、46 项设备测试，0 failures / 0 skipped。日志：build/local-validation/cover-repair-verification.log。
+- 同轮确认书籍远程删除失败目前没有持久重试记录，且与注册/重新下载存在竞争，需要后续统一处理账号归属、迟到请求和持久删除意图；没有把单次重试当作该问题的解决方案。总体清单继续进行，未执行生产写入。

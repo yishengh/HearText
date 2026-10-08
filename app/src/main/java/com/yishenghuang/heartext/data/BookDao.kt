@@ -85,6 +85,12 @@ interface BookDao {
         AND coverPath IS :expectedPath""")
     suspend fun commitUserCover(id: String, filePath: String, addedAt: Long, expectedPath: String?, path: String): Int
 
+    @Query("""UPDATE books SET coverPath = :path, coverSource = :source
+        WHERE id = :id AND filePath = :filePath AND addedAt = :addedAt
+        AND coverPath IS :expectedPath AND coverSource IS :expectedSource""")
+    suspend fun commitMissingCover(id: String, filePath: String, addedAt: Long,
+        expectedPath: String?, expectedSource: CoverSource?, path: String, source: CoverSource): Int
+
     @Query("UPDATE books SET coverPath = :path, coverSource = :source WHERE id = :id")
     suspend fun updateCover(id: String, path: String?, source: CoverSource?)
 

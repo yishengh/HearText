@@ -136,25 +136,30 @@ class BookRepository(
         bookDao.insertIfAbsent(book)
     }
 
-    /** Backfill covers for books that still have none. */
+    /** Backfill covers without overwriting a concurrent user edit or another repair. */
     suspend fun ensureMissingCovers() = withContext(Dispatchers.IO) {
         bookDao.getAll().forEach { book ->
             if (coverStore.hasUsableCover(book.coverPath)) return@forEach
             val epubBytes = if (book.format == BookFormat.EPUB) {
-                runCatching { EpubParser.parse(File(book.filePath)).coverBytes }.getOrNull()
-            } else {
-                null
+                try { EpubParser.parse(File(book.filePath)).coverBytes }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            } else null
+            val key = "repair-${UUID.randomUUID()}"
+            var retained = false
+            try {
+                val (path, source) = coverStore.resolve(
+                    bookId = key, title = book.title, author = book.author,
+                    remoteUrl = book.coverUrl, epubBytes = epubBytes
+                )
+                currentCoroutineContext().ensureActive()
+                withContext(NonCancellable) {
+                    retained = bookDao.commitMissingCover(book.id, book.filePath, book.addedAt,
+                        book.coverPath, book.coverSource, path, source) == 1
+                }
+            } finally {
+                if (!retained) coverStore.delete(key)
             }
-            val (path, source) = coverStore.resolve(
-                bookId = book.id,
-                title = book.title,
-                author = book.author,
-                remoteUrl = book.coverUrl,
-                epubBytes = epubBytes,
-                existingPath = book.coverPath,
-                existingSource = book.coverSource
-            )
-            bookDao.updateCover(book.id, path, source)
         }
     }
 

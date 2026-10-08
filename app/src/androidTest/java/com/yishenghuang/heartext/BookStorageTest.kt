@@ -42,6 +42,39 @@ class BookStorageTest {
         root.deleteRecursively()
     }
 
+    @Test fun coverRepairCannotOverwriteConcurrentUserCoverOrResurrectDeletedBook() = runBlocking {
+        val dao = database.bookDao()
+        val book = BookEntity("repair", "Repair", "Author", BookFormat.TXT, "/fixture.txt")
+        dao.upsert(book)
+        val userPath = CoverStore(context).generate("user-fixture", "User", "Author")
+        val before = File(context.filesDir, "covers").listFiles()!!.map { it.name }.toSet()
+        val racingDao = object : BookDao by dao {
+            override suspend fun commitMissingCover(id: String, filePath: String, addedAt: Long,
+                expectedPath: String?, expectedSource: CoverSource?, path: String, source: CoverSource): Int {
+                dao.updateCover(id, userPath, CoverSource.USER)
+                return dao.commitMissingCover(id, filePath, addedAt, expectedPath, expectedSource, path, source)
+            }
+        }
+        BookRepository(context, racingDao, CoverStore(context)).ensureMissingCovers()
+        assertEquals(userPath, dao.getBook(book.id)!!.coverPath)
+        assertEquals(CoverSource.USER, dao.getBook(book.id)!!.coverSource)
+        assertEquals(before, File(context.filesDir, "covers").listFiles()!!.map { it.name }.toSet())
+        dao.upsert(book)
+        val deletingDao = object : BookDao by dao {
+            override suspend fun commitMissingCover(id: String, filePath: String, addedAt: Long,
+                expectedPath: String?, expectedSource: CoverSource?, path: String, source: CoverSource): Int {
+                dao.delete(id)
+                return dao.commitMissingCover(id, filePath, addedAt, expectedPath, expectedSource, path, source)
+            }
+        }
+        BookRepository(context, deletingDao, CoverStore(context)).ensureMissingCovers()
+        assertNull(dao.getBook(book.id))
+        assertEquals(before, File(context.filesDir, "covers").listFiles()!!.map { it.name }.toSet())
+        dao.upsert(book)
+        repository.ensureMissingCovers()
+        assertTrue(CoverStore(context).hasUsableCover(dao.getBook(book.id)!!.coverPath))
+    }
+
     @Test fun userCoverChangesPathAndDeletedBookCannotReceiveLateCover() = runBlocking {
         val text = File(root, "cover-book.txt").apply { writeText("Local content") }
         val book = repository.importFromUri(Uri.fromFile(text))
