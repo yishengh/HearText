@@ -8,7 +8,7 @@ import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.yishenghuang.heartext.data.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import org.junit.*
 import org.junit.Assert.*
 import java.io.File
@@ -39,6 +39,23 @@ class BookStorageTest {
         ApplicationProvider.getApplicationContext<Context>()
             .deleteSharedPreferences("$preferencesName-library_state")
         root.deleteRecursively()
+    }
+
+    @Test fun concurrentSeedingRepairsInterruptedCopyAndNeverResurrectsDeletedSample() = runBlocking {
+        val incomplete = File(root, "private/books/alice_in_wonderland.epub")
+        incomplete.parentFile!!.mkdirs()
+        incomplete.writeText("interrupted copy")
+        (1..8).map { async(Dispatchers.IO) { repository.ensureSampleBooks() } }.awaitAll()
+        assertEquals(1, database.bookDao().count())
+        val sample = repository.getBook("OL138052W")!!
+        assertTrue(repository.loadChapterTexts(sample).isNotEmpty())
+        database.bookDao().updateProgress(sample.id, 1, 2, 30f, 1000, "saved", null)
+        repository.ensureSampleBooks()
+        assertEquals("saved", repository.getBook(sample.id)!!.locatorJson)
+        repository.deleteBook(sample.id)
+        repository.ensureSampleBooks()
+        assertEquals(0, database.bookDao().count())
+        assertFalse(incomplete.exists())
     }
 
     @Test fun importTextPdfAndEpubThenDeleteBookAndAnnotations() = runBlocking {

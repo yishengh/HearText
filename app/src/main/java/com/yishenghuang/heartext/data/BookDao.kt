@@ -31,6 +31,9 @@ interface BookDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(book: BookEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(book: BookEntity): Long
+
     /** Resolve account collisions and preserve user fields in the same transaction as replacement. */
     @Transaction
     suspend fun saveCatalogDownload(download: BookEntity): BookEntity {

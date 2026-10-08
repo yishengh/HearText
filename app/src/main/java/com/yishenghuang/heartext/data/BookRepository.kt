@@ -3,6 +3,9 @@ package com.yishenghuang.heartext.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,6 +24,7 @@ class BookRepository(
     private val annotationDao: AnnotationDao? = null,
     private val annotationRepository: AnnotationRepository? = null
 ) {
+    private val sampleMutex = Mutex()
     private val progressClock = java.util.concurrent.atomic.AtomicLong()
     internal fun captureProgressTimestamp(): Long = progressClock.updateAndGet {
         maxOf(it + 1, System.currentTimeMillis())
@@ -36,17 +40,17 @@ class BookRepository(
 
     suspend fun getMostRecent(): BookEntity? = bookDao.getMostRecent()
 
-    suspend fun ensureSampleBooks() = withContext(Dispatchers.IO) {
+    suspend fun ensureSampleBooks() = withContext(Dispatchers.IO) { sampleMutex.withLock {
         val prefs = context.getSharedPreferences("library_state", Context.MODE_PRIVATE)
         if (prefs.getBoolean("sample_seeded", false)) {
             ensureMissingCovers()
-            return@withContext
+            return@withLock
         }
         ensureAliceBook()
         if (bookDao.count() > 0) {
             prefs.edit().putBoolean("sample_seeded", true).commit()
             ensureMissingCovers()
-            return@withContext
+            return@withLock
         }
         val sampleTxt = File(booksDir, "sample_welcome.txt")
         if (!sampleTxt.exists()) {
@@ -86,7 +90,7 @@ class BookRepository(
         )
         bookDao.upsert(book)
         prefs.edit().putBoolean("sample_seeded", true).commit()
-    }
+    } }
 
     /**
      * Ships a real public-domain EPUB (Alice). Login sync handles its remote registration.
@@ -94,30 +98,30 @@ class BookRepository(
      */
     private suspend fun ensureAliceBook() {
         val aliceId = "OL138052W"
+        if (bookDao.getBook(aliceId) != null) return
         val dest = File(booksDir, "alice_in_wonderland.epub")
-        if (!dest.exists()) {
-            try {
-                context.assets.open("samples/alice_in_wonderland.epub").use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                }
-            } catch (_: Exception) {
-                return
+        val coroutine = currentCoroutineContext()
+        // A previous interrupted copy is not proof that the bundled document is complete.
+        try {
+            context.assets.open("samples/alice_in_wonderland.epub").use { input ->
+                atomicDownload(input, dest, -1, checkActive = { coroutine.ensureActive() })
             }
-        }
-        val existing = bookDao.getBook(aliceId)
-        if (existing != null) {
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: java.io.IOException) {
             return
         }
-        val parsed = runCatching { EpubParser.parse(dest) }.getOrNull()
-        val title = parsed?.title?.takeIf { it.isNotBlank() && !it.equals("11", true) }
+        val parsed = EpubParser.parse(dest)
+        coroutine.ensureActive()
+        val title = parsed.title?.takeIf { it.isNotBlank() && !it.equals("11", true) }
             ?: "Alice's Adventures in Wonderland"
-        val author = parsed?.author?.takeIf { it.isNotBlank() && it != "Unknown" }
+        val author = parsed.author?.takeIf { it.isNotBlank() && it != "Unknown" }
             ?: "Lewis Carroll"
         val (coverPath, coverSource) = coverStore.resolve(
             bookId = aliceId,
             title = title,
             author = author,
-            epubBytes = parsed?.coverBytes
+            epubBytes = parsed.coverBytes
         )
         val book = BookEntity(
             id = aliceId,
@@ -127,9 +131,9 @@ class BookRepository(
             filePath = dest.absolutePath,
             coverPath = coverPath,
             coverSource = coverSource,
-            totalChapters = parsed?.chapters?.size?.coerceAtLeast(1) ?: 1
+            totalChapters = parsed.chapters.size.coerceAtLeast(1)
         )
-        bookDao.upsert(book)
+        bookDao.insertIfAbsent(book)
     }
 
     /** Backfill covers for books that still have none. */
