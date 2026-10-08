@@ -286,14 +286,18 @@ class BookRepository(
 
     suspend fun setUserCover(bookId: String, uri: Uri): BookEntity? = withContext(Dispatchers.IO) {
         val book = bookDao.getBook(bookId) ?: return@withContext null
-        val path = coverStore.saveUserCover(bookId, uri) ?: return@withContext null
-        val updated = book.copy(
-            coverPath = path,
-            coverSource = CoverSource.USER
-        )
-        bookDao.updateCover(bookId, path, CoverSource.USER)
-        // Keep remote URL if present; local USER cover wins for display.
-        updated
+        // A fresh path invalidates image-loader caches and keeps the old cover intact until commit.
+        val path = coverStore.saveUserCover("user-${UUID.randomUUID()}", uri) ?: return@withContext null
+        var committed = false
+        try {
+            currentCoroutineContext().ensureActive()
+            withContext(NonCancellable) {
+                committed = bookDao.commitUserCover(book.id, book.filePath, book.addedAt, book.coverPath, path) == 1
+                if (committed) bookDao.getBook(bookId) else null
+            }
+        } finally {
+            if (!committed) File(path).delete()
+        }
     }
 
     suspend fun updateDescription(bookId: String, description: String?): BookEntity? = withContext(Dispatchers.IO) {

@@ -15,6 +15,7 @@ import java.io.File
 import java.util.UUID
 
 class BookStorageTest {
+    private lateinit var context: Context
     private lateinit var root: File
     private lateinit var database: AppDatabase
     private lateinit var repository: BookRepository
@@ -25,7 +26,7 @@ class BookStorageTest {
         val app = ApplicationProvider.getApplicationContext<Context>()
         root = File(app.cacheDir, "book-test-${UUID.randomUUID()}").apply { mkdirs() }
         preferencesName = "book-test-${UUID.randomUUID()}"
-        val context = object : ContextWrapper(app) {
+        context = object : ContextWrapper(app) {
             override fun getFilesDir() = File(root, "private").apply { mkdirs() }
             override fun getSharedPreferences(name: String, mode: Int) =
                 app.getSharedPreferences("$preferencesName-$name", mode)
@@ -39,6 +40,33 @@ class BookStorageTest {
         ApplicationProvider.getApplicationContext<Context>()
             .deleteSharedPreferences("$preferencesName-library_state")
         root.deleteRecursively()
+    }
+
+    @Test fun userCoverChangesPathAndDeletedBookCannotReceiveLateCover() = runBlocking {
+        val text = File(root, "cover-book.txt").apply { writeText("Local content") }
+        val book = repository.importFromUri(Uri.fromFile(text))
+        val covers = CoverStore(context)
+        val image = File(covers.generate("fixture", "Image", "Author"))
+        val first = repository.setUserCover(book.id, Uri.fromFile(image))!!
+        val second = repository.setUserCover(book.id, Uri.fromFile(image))!!
+        assertNotEquals(book.coverPath, first.coverPath)
+        assertNotEquals(first.coverPath, second.coverPath)
+        assertEquals(CoverSource.USER, second.coverSource)
+        val invalid = File(root, "invalid.jpg").apply { writeText("invalid") }
+        assertNull(repository.setUserCover(book.id, Uri.fromFile(invalid)))
+        assertEquals(second.coverPath, repository.getBook(book.id)!!.coverPath)
+        val before = File(root, "private/covers").listFiles()!!.map { it.name }.toSet()
+        val dao = database.bookDao()
+        val deletingDao = object : BookDao by dao {
+            override suspend fun commitUserCover(id: String, filePath: String, addedAt: Long, expectedPath: String?, path: String): Int {
+                dao.delete(id)
+                return dao.commitUserCover(id, filePath, addedAt, expectedPath, path)
+            }
+        }
+        val deletingRepository = BookRepository(context, deletingDao, covers)
+        assertNull(deletingRepository.setUserCover(book.id, Uri.fromFile(image)))
+        assertNull(dao.getBook(book.id))
+        assertEquals(before, File(root, "private/covers").listFiles()!!.map { it.name }.toSet())
     }
 
     @Test fun concurrentSeedingRepairsInterruptedCopyAndNeverResurrectsDeletedSample() = runBlocking {

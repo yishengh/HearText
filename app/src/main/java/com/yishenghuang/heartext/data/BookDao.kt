@@ -80,6 +80,11 @@ interface BookDao {
     suspend fun mergeRemoteProgress(id: String, owner: String, chapter: Int, offset: Int,
         percent: Float, updatedAt: Long)
 
+    @Query("""UPDATE books SET coverPath = :path, coverSource = 'USER'
+        WHERE id = :id AND filePath = :filePath AND addedAt = :addedAt
+        AND coverPath IS :expectedPath""")
+    suspend fun commitUserCover(id: String, filePath: String, addedAt: Long, expectedPath: String?, path: String): Int
+
     @Query("UPDATE books SET coverPath = :path, coverSource = :source WHERE id = :id")
     suspend fun updateCover(id: String, path: String?, source: CoverSource?)
 

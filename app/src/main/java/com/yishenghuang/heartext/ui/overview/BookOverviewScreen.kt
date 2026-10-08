@@ -59,6 +59,8 @@ fun BookOverviewScreen(
     onKeepReading: (bookId: String, title: String, coverPath: String?) -> Unit
 ) {
     val book by viewModel.book.collectAsStateWithLifecycle()
+    val coverSaving by viewModel.coverSaving.collectAsStateWithLifecycle()
+    val coverError by viewModel.coverError.collectAsStateWithLifecycle()
     val coverPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
@@ -112,6 +114,9 @@ fun BookOverviewScreen(
                         modifier = Modifier
                             .pressEffect()
                             .clickable(
+                                enabled = !coverSaving,
+                                onClickLabel = stringResource(R.string.overview_change_cover),
+                                role = androidx.compose.ui.semantics.Role.Button,
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() }
                             ) { coverPicker.launch("image/*") }
@@ -124,8 +129,10 @@ fun BookOverviewScreen(
                         color = HearPurple,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { coverPicker.launch("image/*") }
+                        modifier = Modifier.clickable(enabled = !coverSaving) { coverPicker.launch("image/*") }
                     )
+                    if (coverSaving) CircularProgressIndicator(Modifier.size(24.dp))
+                    if (coverError) Text(stringResource(R.string.error_cover_save), color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(AppSpace.md))
                     Text(
                         b.title,

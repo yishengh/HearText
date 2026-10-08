@@ -123,9 +123,23 @@ class BookOverviewViewModel(
         }
     }
 
+    private val _coverSaving = MutableStateFlow(false)
+    val coverSaving = _coverSaving.asStateFlow()
+    private val _coverError = MutableStateFlow(false)
+    val coverError = _coverError.asStateFlow()
+
     fun changeCover(uri: android.net.Uri) {
+        if (_coverSaving.value) return
+        _coverSaving.value = true
+        _coverError.value = false
         viewModelScope.launch {
-            bookRepository.setUserCover(bookId, uri)
+            try {
+                _coverError.value = bookRepository.setUserCover(bookId, uri) == null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _coverError.value = true
+            } finally { _coverSaving.value = false }
         }
     }
 
