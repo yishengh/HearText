@@ -127,6 +127,7 @@ fun HearTextRoot() {
     } else {
         MainNav(
             app = app,
+            startInLibrary = true,
             authViewModel = authViewModel,
             onRequestSignIn = { setOfflineMode(false) }
         )
@@ -136,11 +137,13 @@ fun HearTextRoot() {
 @Composable
 private fun MainNav(
     app: HearTextApp,
+    startInLibrary: Boolean = false,
     authViewModel: AuthViewModel,
     onRequestSignIn: () -> Unit
 ) {
     val navController = rememberNavController()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val startRoute = if (startInLibrary) Routes.Library.route else Routes.Store.route
+    var selectedTab by remember { mutableIntStateOf(if (startInLibrary) 1 else 0) }
     var tabBarVisible by remember { mutableStateOf(true) }
     var showTransition by remember { mutableStateOf(false) }
     var transitionCover by remember { mutableStateOf<String?>(null) }
@@ -239,7 +242,7 @@ private fun MainNav(
             MainTab.Profile -> Routes.Profile.route
         }
         navController.navigate(route) {
-            popUpTo(Routes.Store.route) { saveState = true }
+            popUpTo(navController.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
             restoreState = true
         }
@@ -260,7 +263,7 @@ private fun MainNav(
     ) {
         NavHost(
             navController = navController,
-            startDestination = Routes.Store.route,
+            startDestination = startRoute,
             modifier = Modifier
                 .fillMaxSize()
                 .haze(hazeState)

@@ -398,3 +398,12 @@ PDF 只阅读；不恢复已取消的滚动阅读模式，不新增社交、支�
 - 新设备测试验证固定英语的旧 Context 在偏好切换后读取英、中、法、西，并在 SYSTEM 恢复系统资源；另通过实际 MainActivity/AppCompat 语言切换，确认四种语言下 Activity 与同一个长期 Application 的新提示一致，结束后恢复原语言。
 - 完整 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 通过（2m17s）：Debug、Lint、54 项 JVM、59 项设备测试，0 failures / 0 skipped。日志：build/local-validation/locale-consistency-verification.log。
 - 本轮覆盖新生成提示及实际资源切换，不声称逐屏人工翻译校对或自动重译此前已经生成的字符串状态；设备为 API 35，旧 API 设备仍未运行。下一步按既定清单核对剩余生命周期验证和交付证据，不新增产品需求。未发布、推送或生产写入。
+
+### 第三十八轮：文字进程恢复与离线入口
+
+- 实际界面进入验证包示例 EPUB，翻到 chapter=0/page=1，Room 保存 UTF-16 character=652；发送 Home 后 am kill，确认旧 PID 4911 消失，重新打开原任务后 PID=5246。实际页面的 299 个字符完全相同，SHA-256 为 2434e36eec9912d5fb76868ac3bcc381345c7d7cc1e4001041351cab986ed092。
+- 增加 tools/verify-process-restore.py，只允许显式指定模拟器并操作 validation 包；检查正文节点、旧进程消失、新 PID 与可见正文相同，仅输出哈希。独立再运行通过（PID 5246→5387）。证据在 build/local-validation/process-death-evidence.json 和 process-restore-script.json。上述实际进程验证使用本轮修改离线入口前的 APK（ddd5c57）；最终导航调整后的 APK 和 PDF 还需再核对，不混为同一范围。
+- 实际操作发现离线入口进入书城登录错误页。现离线模式初始路由改为本地书库，标签切换按实际导航图起点保存栈；已登录初始书城不变。LocalReaderSmokeTest 增加离线进入后书库已选中的断言。
+- 首轮完整回归因模拟器消失中断。Windows Application 事件 1000/1001 确认 23:37 和 23:54 的 qemu-system-x86_64-headless.exe 发生 0xc0000005，模块 unknown；这是宿主模拟器崩溃证据，并非已定位的 Android 应用异常。没有读取进程内存转储或修改驱动/SDK配置。
+- 确认旧模拟器进程已不存在后，以当前 emulator -help-gpu 支持的 -gpu software 重启本任务 Small_Tablet/5582。最终 tools/verify-local.ps1 -Connected -Serial emulator-5582 -OfflineFixture 完整通过（1m49s）：Debug、Lint、54 项 JVM、59 项设备测试，0 failures / 0 skipped。日志：build/local-validation/offline-entry-software-verification.log。单轮成功不能证明宿主崩溃根因已修复。
+- 下一步按原清单补 PDF 完整进程恢复、阅读搜索实际跳转、正常 Debug 构建配置检查，并收敛最终证据清单。未发布、推送或生产写入。

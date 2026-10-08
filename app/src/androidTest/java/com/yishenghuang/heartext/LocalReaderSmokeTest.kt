@@ -32,6 +32,7 @@ class LocalReaderSmokeTest {
         compose.waitUntil(30_000) {
             compose.onAllNodesWithContentDescription(libraryLabel).fetchSemanticsNodes().isNotEmpty()
         }
+        compose.onNodeWithContentDescription(libraryLabel).assertIsSelected()
         compose.onNodeWithContentDescription(libraryLabel).performClick()
         compose.onNodeWithContentDescription(libraryLabel).assertIsSelected()
         try {

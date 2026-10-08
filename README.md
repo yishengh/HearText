@@ -112,3 +112,13 @@ python tools/make_feature_graphic.py
 ## License
 
 Private / all rights reserved unless otherwise stated.
+
+### 文字阅读的进程恢复检查（隔离验证包）
+
+先在指定模拟器安装验证 APK，打开 EPUB/TXT 的一页正文（至少 150 字符），停止听书，再运行：
+
+```powershell
+python tools/verify-process-restore.py --serial emulator-5582
+```
+
+脚本仅操作 `com.yishenghuang.heartext.validation`：发送 Home、用 `am kill` 终止后台进程、确认旧进程消失、重新打开原任务，并比较恢复前后的可见正文哈希。它不使用 `force-stop`，也不把 Activity 重建当作进程恢复。证据写入 `build/local-validation/process-restore-script.json`，不保存正文。此命令只覆盖文字阅读；PDF、后台音频及设备厂商的任务清理需要分别验证。
