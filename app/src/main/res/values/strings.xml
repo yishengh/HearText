@@ -307,4 +307,11 @@
     <string name="reader_script_title">Chinese script</string>
     <string name="reader_volume_keys">Volume keys turn pages</string>
     <string name="reader_volume_keys_sub">Volume up: previous · Volume down: next</string>
+    <string name="auth_action_failed">Unable to continue. Check your details and connection, then try again.</string>
+    <string name="auth_unsupported_verification">This account requires a verification method that is not supported in this app.</string>
+    <string name="auth_incomplete">Account verification is not complete. Check the required account information and try again.</string>
+    <string name="auth_attempt_expired">This sign-in attempt has expired. Start again.</string>
+    <string name="auth_sync_failed">Cloud sync could not finish. Your local books are still available.</string>
+    <string name="auth_sign_out_failed">Unable to sign out. Check your connection and try again.</string>
+    <string name="auth_connection_failed">Unable to connect to the sign-in service. Try again or continue offline.</string>
 </resources>

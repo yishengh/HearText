@@ -1,6 +1,10 @@
 package com.yishenghuang.heartext.ui.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -67,6 +71,16 @@ fun AuthGate(
                 CircularProgressIndicator(color = Color.White)
                 Spacer(Modifier.height(12.dp))
                 Text(stringResource(R.string.auth_connecting), color = Color.White)
+                TextButton(onClick = onContinueOffline) {
+                    Text(stringResource(R.string.auth_continue_offline), color = Color.White)
+                }
+            }
+        }
+        state is AuthUiState.ConnectionFailed -> {
+            Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+                Text(stringResource(R.string.auth_connection_failed))
+                Button(onClick = authViewModel::retryInitialization) { Text(stringResource(R.string.action_retry)) }
+                TextButton(onClick = onContinueOffline) { Text(stringResource(R.string.auth_continue_offline)) }
             }
         }
         state is AuthUiState.MissingClerkKey -> {
@@ -111,6 +125,9 @@ fun SignInOrUpScreen(onContinueOffline: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(HearPurple)
+            .imePadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -232,7 +249,7 @@ private fun SignInForm(viewModel: SignInViewModel = viewModel()) {
             }
         }
     }
-    error?.let { Text(it, color = Color.Red) }
+    error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
 }
 
 @Composable
@@ -260,6 +277,9 @@ private fun SignUpForm(viewModel: SignUpViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = HearPurple)
             ) { Text(stringResource(R.string.auth_verify)) }
+            TextButton(onClick = viewModel::resendCode, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.auth_resend))
+            }
         }
         else -> {
             OutlinedTextField(
@@ -286,5 +306,5 @@ private fun SignUpForm(viewModel: SignUpViewModel = viewModel()) {
             ) { Text(stringResource(R.string.auth_sign_up)) }
         }
     }
-    error?.let { Text(it, color = Color.Red) }
+    error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
 }

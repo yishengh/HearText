@@ -307,4 +307,11 @@
     <string name="reader_script_title">Écriture chinoise</string>
     <string name="reader_volume_keys">Touches volume pour tourner</string>
     <string name="reader_volume_keys_sub">Volume + : précédent · Volume − : suivant</string>
+    <string name="auth_action_failed">Impossible de continuer. Vérifiez vos informations et votre connexion, puis réessayez.</string>
+    <string name="auth_unsupported_verification">Ce compte nécessite une méthode de vérification non prise en charge par cette application.</string>
+    <string name="auth_incomplete">La vérification du compte est incomplète. Vérifiez les informations requises et réessayez.</string>
+    <string name="auth_attempt_expired">Cette tentative de connexion a expiré. Recommencez.</string>
+    <string name="auth_sync_failed">La synchronisation a échoué. Vos livres locaux restent disponibles.</string>
+    <string name="auth_sign_out_failed">Déconnexion impossible. Vérifiez votre connexion et réessayez.</string>
+    <string name="auth_connection_failed">Connexion au service impossible. Réessayez ou continuez hors ligne.</string>
 </resources>

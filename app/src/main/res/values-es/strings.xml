@@ -307,4 +307,11 @@
     <string name="reader_script_title">Escritura china</string>
     <string name="reader_volume_keys">Teclas de volumen pasan página</string>
     <string name="reader_volume_keys_sub">Volumen + : anterior · Volumen − : siguiente</string>
+    <string name="auth_action_failed">No se puede continuar. Comprueba tus datos y la conexión e inténtalo de nuevo.</string>
+    <string name="auth_unsupported_verification">Esta cuenta requiere un método de verificación que la aplicación no admite.</string>
+    <string name="auth_incomplete">La verificación de la cuenta no se ha completado. Revisa los datos obligatorios e inténtalo de nuevo.</string>
+    <string name="auth_attempt_expired">Este intento de inicio de sesión ha caducado. Empieza de nuevo.</string>
+    <string name="auth_sync_failed">No se completó la sincronización. Tus libros locales siguen disponibles.</string>
+    <string name="auth_sign_out_failed">No se pudo cerrar la sesión. Comprueba la conexión e inténtalo de nuevo.</string>
+    <string name="auth_connection_failed">No se puede conectar al servicio. Reintenta o continúa sin conexión.</string>
 </resources>

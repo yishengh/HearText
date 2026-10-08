@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,9 +100,18 @@ fun HearTextRoot() {
 
     val authViewModel: AuthViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { AuthViewModel(app.container.bookRepository) }
+            initializer { AuthViewModel(app.container.bookRepository, syncEnabled = !offlineMode) }
         }
     )
+    LaunchedEffect(offlineMode) { authViewModel.setSyncEnabled(!offlineMode) }
+    val authMessage by authViewModel.message.collectAsStateWithLifecycle()
+    val authMessageText = authMessage?.let { stringResource(it) }
+    LaunchedEffect(authMessageText) {
+        authMessageText?.let {
+            android.widget.Toast.makeText(app, it, android.widget.Toast.LENGTH_LONG).show()
+            authViewModel.clearMessage()
+        }
+    }
 
     if (!offlineMode) {
         AuthGate(

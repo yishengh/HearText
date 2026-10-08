@@ -85,7 +85,7 @@ class BookRepository(
     }
 
     /**
-     * Ships a real public-domain EPUB (Alice) and syncs it to the backend shelf when signed in.
+     * Ships a real public-domain EPUB (Alice). Login sync handles its remote registration.
      * Uses a stable client_book_id so cloud sync can match Open Library / seed fixtures.
      */
     private suspend fun ensureAliceBook() {
@@ -102,7 +102,6 @@ class BookRepository(
         }
         val existing = bookDao.getBook(aliceId)
         if (existing != null) {
-            runCatching { cloudSync?.ensureRemoteBook(existing) }
             return
         }
         val parsed = runCatching { EpubParser.parse(dest) }.getOrNull()
@@ -127,7 +126,6 @@ class BookRepository(
             totalChapters = parsed?.chapters?.size?.coerceAtLeast(1) ?: 1
         )
         bookDao.upsert(book)
-        runCatching { cloudSync?.ensureRemoteBook(book) }
     }
 
     /** Backfill covers for books that still have none. */

@@ -7,6 +7,9 @@ import com.clerk.api.network.serialization.onFailure
 import com.clerk.api.network.serialization.onSuccess
 import com.clerk.api.session.GetTokenOptions
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Provides Clerk session JWTs for Authorization: Bearer &lt;token&gt;.
@@ -42,7 +45,7 @@ class AuthTokenProvider : SessionTokenProvider {
         get() = Clerk.userFlow.value != null
 
     suspend fun awaitReady() {
-        Clerk.isInitialized.first { it }
+        awaitAuthReady(Clerk.isInitialized, Clerk.initializationError)
     }
 
     override suspend fun getToken(forceRefresh: Boolean): String {
@@ -58,6 +61,14 @@ class AuthTokenProvider : SessionTokenProvider {
             .onFailure { failure -> errorMsg = failure.message() }
         return jwt ?: error(errorMsg ?: "Empty session token")
     }
+}
+
+internal suspend fun awaitAuthReady(ready: Flow<Boolean>, failure: Flow<Throwable?>, timeoutMillis: Long = 15_000) {
+    val initialized = withTimeoutOrNull(timeoutMillis) {
+        combine(ready, failure) { initialized, error -> initialized to error }
+            .first { (initialized, error) -> initialized || error != null }.first
+    }
+    check(initialized == true) { "Authentication unavailable" }
 }
 
 internal fun ClerkResult.Failure<*>.message(): String {
